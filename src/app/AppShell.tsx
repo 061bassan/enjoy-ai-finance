@@ -2,12 +2,11 @@ import * as React from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import {
   Check,
+  ChevronRight,
   ChevronsUpDown,
   LogOut,
   Menu,
   Moon,
-  PanelLeftClose,
-  PanelLeftOpen,
   Sun,
   UserCog,
   X,
@@ -23,7 +22,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Badge } from '@/components/ui/badge'
 import { ROLE_LABEL } from '@/data/enums'
 import { useCustomization } from '@/customization/context'
@@ -48,36 +46,27 @@ function Logo({ className }: { className?: string }) {
   )
 }
 
-function WorkspaceSwitcher({ collapsed }: { collapsed: boolean }) {
+function WorkspaceSwitcher() {
   const { workspaces, workspace, session, switchWorkspace } = useSession()
 
   if (!workspace) return null
 
-  const trigger = collapsed ? (
-    <button
-      className="flex w-full items-center justify-center rounded-lg border border-border/70 bg-surface-1 p-1.5 transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      aria-label={`Espaço ${workspace.shortName}`}
-    >
-      <Logo />
-    </button>
-  ) : (
-    <button className="flex w-full items-center gap-2.5 rounded-lg border border-border/70 bg-surface-1 px-2.5 py-2 text-left transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-      <Logo />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-semibold leading-tight">
-          {workspace.shortName}
-        </span>
-        <span className="block truncate text-[11px] leading-tight text-muted-foreground">
-          {session?.role ? ROLE_LABEL[session.role] : ''}
-        </span>
-      </span>
-      <ChevronsUpDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-    </button>
-  )
-
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
+      <DropdownMenuTrigger asChild>
+        <button className="flex w-full items-center gap-2.5 rounded-lg border border-border/70 bg-surface-1 px-2.5 py-2 text-left transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <Logo />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-semibold leading-tight">
+              {workspace.shortName}
+            </span>
+            <span className="block truncate text-[11px] leading-tight text-muted-foreground">
+              {session?.role ? ROLE_LABEL[session.role] : ''}
+            </span>
+          </span>
+          <ChevronsUpDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+        </button>
+      </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-60">
         <DropdownMenuLabel>Trocar de espaço</DropdownMenuLabel>
         {workspaces.map(({ workspace: ws, role }) => (
@@ -102,19 +91,15 @@ function WorkspaceSwitcher({ collapsed }: { collapsed: boolean }) {
   )
 }
 
-function SidebarNav({
-  collapsed,
-  onNavigate,
-}: {
-  collapsed: boolean
-  onNavigate?: () => void
-}) {
+function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   const { allow, workspace } = useSession()
   const { isNavHidden } = useCustomization()
+  const { isGroupCollapsed, toggleGroup } = useSidebar()
+  const { pathname } = useLocation()
   const isPersonal = workspace?.type === 'personal'
 
   return (
-    <nav className={cn('flex-1 overflow-y-auto py-4', collapsed ? 'space-y-3 px-2' : 'space-y-5 px-3')}>
+    <nav className="flex-1 space-y-3 overflow-y-auto px-3 py-4">
       {NAVIGATION.map((group) => {
         const items = group.items.filter((item) => {
           if (item.teamOnly && isPersonal) return false
@@ -125,53 +110,73 @@ function SidebarNav({
         })
         if (!items.length) return null
 
+        const collapsed = isGroupCollapsed(group.label)
+        // Mesma regra de "ativo" do NavLink abaixo — o painel recolhido precisa
+        // dizer que a tela aberta está lá dentro, senão some a única pista de
+        // onde a pessoa está.
+        const hasActive = items.some((item) =>
+          item.to === '/' ? pathname === '/' : pathname.startsWith(item.to),
+        )
+        const panelId = `nav-grupo-${group.label.toLowerCase().replace(/\s+/g, '-')}`
+
         return (
           <div key={group.label}>
-            {collapsed ? (
-              <div className="mx-2 mb-1.5 border-t border-border/60" />
-            ) : (
-              <p className="mb-1.5 px-2 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/70">
-                {group.label}
-              </p>
-            )}
+            <button
+              type="button"
+              onClick={() => toggleGroup(group.label)}
+              aria-expanded={!collapsed}
+              aria-controls={panelId}
+              className={cn(
+                'mb-1.5 flex w-full items-center gap-1 rounded-md py-1 pl-1 pr-2 text-[10px] font-medium uppercase tracking-widest transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                collapsed && hasActive
+                  ? 'text-foreground'
+                  : 'text-muted-foreground/70 hover:text-foreground',
+              )}
+            >
+              <ChevronRight
+                className={cn(
+                  'h-3 w-3 shrink-0 transition-transform duration-200',
+                  !collapsed && 'rotate-90',
+                )}
+              />
+              <span className="truncate">{group.label}</span>
+              {collapsed && hasActive && (
+                <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-foreground/60" />
+              )}
+            </button>
 
-            <ul className="space-y-0.5">
-              {items.map((item) => {
-                const link = (
-                  <NavLink
-                    to={item.to}
-                    end={item.to === '/'}
-                    onClick={onNavigate}
-                    aria-label={collapsed ? item.label : undefined}
-                    className={({ isActive }) =>
-                      cn(
-                        'flex items-center rounded-md text-sm transition-colors',
-                        collapsed ? 'justify-center p-2' : 'gap-2.5 px-2 py-1.5',
-                        isActive
-                          ? 'bg-accent font-medium text-accent-foreground'
-                          : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
-                      )
-                    }
-                  >
-                    <item.icon className="h-4 w-4 shrink-0" />
-                    {!collapsed && <span className="truncate">{item.label}</span>}
-                  </NavLink>
-                )
-
-                return (
+            {/* grid-rows 0fr→1fr anima a altura sem precisar medi-la em JS. */}
+            <div
+              id={panelId}
+              className={cn(
+                'grid transition-[grid-template-rows] duration-200',
+                collapsed ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]',
+              )}
+            >
+              <ul className="space-y-0.5 overflow-hidden">
+                {items.map((item) => (
                   <li key={item.to}>
-                    {collapsed ? (
-                      <Tooltip>
-                        <TooltipTrigger asChild>{link}</TooltipTrigger>
-                        <TooltipContent side="right">{item.label}</TooltipContent>
-                      </Tooltip>
-                    ) : (
-                      link
-                    )}
+                    <NavLink
+                      to={item.to}
+                      end={item.to === '/'}
+                      onClick={onNavigate}
+                      tabIndex={collapsed ? -1 : undefined}
+                      className={({ isActive }) =>
+                        cn(
+                          'flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm transition-colors',
+                          isActive
+                            ? 'bg-accent font-medium text-accent-foreground'
+                            : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
+                        )
+                      }
+                    >
+                      <item.icon className="h-4 w-4 shrink-0" />
+                      <span className="truncate">{item.label}</span>
+                    </NavLink>
                   </li>
-                )
-              })}
-            </ul>
+                ))}
+              </ul>
+            </div>
           </div>
         )
       })}
@@ -229,7 +234,6 @@ function UserMenu() {
 
 export function AppShell() {
   const [mobileOpen, setMobileOpen] = React.useState(false)
-  const { collapsed, toggle } = useSidebar()
   const location = useLocation()
 
   // Fecha a gaveta ao navegar no mobile.
@@ -239,54 +243,21 @@ export function AppShell() {
 
   return (
     <div className="app-backdrop flex min-h-screen">
-      {/* Sidebar — fixa no desktop, gaveta no mobile.
-          No mobile o estado recolhido não vale: quem abriu a gaveta quer ler
-          os nomes, não decifrar ícones. */}
+      {/* Sidebar — fixa no desktop, gaveta no mobile */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-40 flex flex-col border-r border-border bg-surface-1/80 backdrop-blur-xl transition-[transform,width] duration-200 lg:translate-x-0',
-          mobileOpen ? 'w-60 translate-x-0' : '-translate-x-full',
-          collapsed ? 'lg:w-[4.25rem]' : 'lg:w-60',
+          'fixed inset-y-0 left-0 z-40 flex w-60 flex-col border-r border-border bg-surface-1/80 backdrop-blur-xl transition-transform lg:translate-x-0',
+          mobileOpen ? 'translate-x-0' : '-translate-x-full',
         )}
       >
-        <div className={cn(collapsed ? 'p-2 lg:p-2' : 'p-3')}>
-          <WorkspaceSwitcher collapsed={collapsed && !mobileOpen} />
+        <div className="p-3">
+          <WorkspaceSwitcher />
         </div>
-
-        <SidebarNav
-          collapsed={collapsed && !mobileOpen}
-          onNavigate={() => setMobileOpen(false)}
-        />
-
-        <div className="border-t border-border p-2">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                onClick={toggle}
-                aria-label={collapsed ? 'Expandir menu' : 'Recolher menu'}
-                className={cn(
-                  'hidden w-full items-center rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:flex',
-                  collapsed ? 'justify-center' : 'gap-2',
-                )}
-              >
-                {collapsed ? (
-                  <PanelLeftOpen className="h-4 w-4 shrink-0" />
-                ) : (
-                  <>
-                    <PanelLeftClose className="h-4 w-4 shrink-0" />
-                    <span>Recolher menu</span>
-                  </>
-                )}
-              </button>
-            </TooltipTrigger>
-            {collapsed && <TooltipContent side="right">Expandir menu · [</TooltipContent>}
-          </Tooltip>
-
-          {!collapsed && (
-            <p className="px-2 pt-2 text-[10px] leading-relaxed text-muted-foreground/60">
-              Dados salvos neste navegador
-            </p>
-          )}
+        <SidebarNav onNavigate={() => setMobileOpen(false)} />
+        <div className="border-t border-border px-4 py-3">
+          <p className="text-[10px] leading-relaxed text-muted-foreground/60">
+            Dados salvos neste navegador
+          </p>
         </div>
       </aside>
 
@@ -297,12 +268,7 @@ export function AppShell() {
         />
       )}
 
-      <div
-        className={cn(
-          'flex min-w-0 flex-1 flex-col transition-[padding] duration-200',
-          collapsed ? 'lg:pl-[4.25rem]' : 'lg:pl-60',
-        )}
-      >
+      <div className="flex min-w-0 flex-1 flex-col lg:pl-60">
         <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-border bg-background/70 px-4 backdrop-blur-xl lg:px-6">
           <Button
             variant="ghost"

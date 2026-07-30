@@ -1,58 +1,57 @@
 import * as React from 'react'
 
 /**
- * Estado recolhido da barra lateral.
+ * Quais grupos do menu estão recolhidos.
  *
  * Fica em localStorage, e não no workspace, de propósito: é preferência de
- * PESSOA, não da empresa. Duas pessoas na mesma conta têm telas de tamanhos
- * diferentes e opiniões diferentes sobre o que fazer com o espaço.
+ * PESSOA, não da empresa. Duas pessoas na mesma conta usam partes diferentes
+ * do app e discordam sobre o que vale manter aberto.
+ *
+ * Guarda os RECOLHIDOS, e não os abertos: assim um grupo novo no menu nasce
+ * visível para quem já tinha preferência salva, em vez de nascer escondido.
  */
 
-const STORAGE_KEY = 'enjoy.sidebar.collapsed'
+const STORAGE_KEY = 'enjoy.sidebar.groups'
+
+function readCollapsed(): string[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return []
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((value): value is string => typeof value === 'string')
+  } catch {
+    // Preferência corrompida não pode derrubar a navegação — abre tudo.
+    return []
+  }
+}
 
 interface SidebarContextValue {
-  collapsed: boolean
-  toggle: () => void
-  setCollapsed: (collapsed: boolean) => void
+  isGroupCollapsed: (label: string) => boolean
+  toggleGroup: (label: string) => void
 }
 
 const SidebarContext = React.createContext<SidebarContextValue | null>(null)
 
 export function SidebarProvider({ children }: { children: React.ReactNode }) {
-  const [collapsed, setCollapsedState] = React.useState<boolean>(
-    () => localStorage.getItem(STORAGE_KEY) === '1',
-  )
+  const [collapsedGroups, setCollapsedGroups] = React.useState<string[]>(readCollapsed)
 
   React.useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, collapsed ? '1' : '0')
-  }, [collapsed])
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(collapsedGroups))
+  }, [collapsedGroups])
 
-  const toggle = React.useCallback(() => setCollapsedState((current) => !current), [])
-
-  // Atalho "[" — só dispara fora de campo de texto, senão digitar um colchete
-  // numa observação recolheria o menu.
-  React.useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key !== '[' || event.metaKey || event.ctrlKey || event.altKey) return
-      const target = event.target as HTMLElement | null
-      if (
-        target &&
-        (target.isContentEditable ||
-          ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
-      ) {
-        return
-      }
-      event.preventDefault()
-      toggle()
-    }
-
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [toggle])
+  const toggleGroup = React.useCallback((label: string) => {
+    setCollapsedGroups((current) =>
+      current.includes(label) ? current.filter((item) => item !== label) : [...current, label],
+    )
+  }, [])
 
   const value = React.useMemo<SidebarContextValue>(
-    () => ({ collapsed, toggle, setCollapsed: setCollapsedState }),
-    [collapsed, toggle],
+    () => ({
+      isGroupCollapsed: (label) => collapsedGroups.includes(label),
+      toggleGroup,
+    }),
+    [collapsedGroups, toggleGroup],
   )
 
   return <SidebarContext.Provider value={value}>{children}</SidebarContext.Provider>
