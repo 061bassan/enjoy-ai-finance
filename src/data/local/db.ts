@@ -1,4 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie'
+import type { Customization } from '@/customization/types'
 import type {
   Account,
   ActivityLog,
@@ -60,6 +61,7 @@ export class EnjoyDatabase extends Dexie {
   cards!: EntityTable<Card, 'id'>
 
   activity!: EntityTable<ActivityLog, 'id'>
+  customizations!: EntityTable<Customization, 'id'>
 
   constructor() {
     super('enjoy-ai-finance')
@@ -95,6 +97,17 @@ export class EnjoyDatabase extends Dexie {
 
       activity: 'id, workspaceId, entityId, actorId, createdAt, [workspaceId+createdAt]',
     })
+
+    /**
+     * v2 — personalização por workspace.
+     *
+     * Dexie aplica só o delta: as tabelas da v1 e os dados nelas ficam
+     * intactos. Uma base existente ganha a tabela vazia na próxima abertura,
+     * e a ausência de registro significa "preferências padrão".
+     */
+    this.version(2).stores({
+      customizations: 'id, workspaceId',
+    })
   }
 }
 
@@ -123,6 +136,7 @@ export const TABLE_NAMES = [
   'boardColumns',
   'cards',
   'activity',
+  'customizations',
 ] as const
 
 export type TableName = (typeof TABLE_NAMES)[number]

@@ -19,6 +19,7 @@ import type {
 } from '@/data/types'
 import { useSession } from '@/app/session'
 import { useCreateSale } from '@/hooks/data'
+import { DateField } from '@/components/DateField'
 import { MoneyInput } from '@/components/MoneyInput'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -296,12 +297,7 @@ export function SaleDialog({
 
                 <div className="space-y-1.5">
                   <Label htmlFor="sale-date">Data da venda</Label>
-                  <Input
-                    id="sale-date"
-                    type="date"
-                    value={saleDate}
-                    onChange={(event) => setSaleDate(event.target.value)}
-                  />
+                  <DateField id="sale-date" value={saleDate} onChange={setSaleDate} />
                 </div>
 
                 <div className="space-y-1.5">
@@ -359,11 +355,12 @@ export function SaleDialog({
 
                 <div className="space-y-1.5">
                   <Label htmlFor="lead-date">Entrada do lead</Label>
-                  <Input
+                  <DateField
                     id="lead-date"
-                    type="date"
                     value={leadCreatedAt}
-                    onChange={(event) => setLeadCreatedAt(event.target.value)}
+                    onChange={setLeadCreatedAt}
+                    clearable
+                    onClear={() => setLeadCreatedAt('')}
                   />
                   <p className="text-[11px] text-muted-foreground">
                     Permite medir os dias até fechar.

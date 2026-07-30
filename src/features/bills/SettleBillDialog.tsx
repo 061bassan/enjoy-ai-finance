@@ -6,6 +6,7 @@ import type { Account } from '@/data/types'
 import type { BillView } from '@/domain/bills'
 import { useSession } from '@/app/session'
 import { useSettleBill } from '@/hooks/data'
+import { DateField } from '@/components/DateField'
 import { MoneyInput } from '@/components/MoneyInput'
 import { Button } from '@/components/ui/button'
 import {
@@ -16,7 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Input, Textarea } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -138,12 +139,7 @@ export function SettleBillDialog({
 
             <div className="space-y-1.5">
               <Label htmlFor="settle-date">Data</Label>
-              <Input
-                id="settle-date"
-                type="date"
-                value={date}
-                onChange={(event) => setDate(event.target.value)}
-              />
+              <DateField id="settle-date" value={date} onChange={setDate} />
             </div>
           </div>
 

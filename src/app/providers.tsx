@@ -3,8 +3,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { CustomizationProvider } from '@/customization/context'
 import { PeriodProvider } from './period'
 import { SessionProvider } from './session'
+import { SidebarProvider } from './sidebar'
 import { ThemeProvider } from './theme'
 
 /**
@@ -28,20 +30,26 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <SessionProvider>
-          <PeriodProvider>
-            <TooltipProvider delayDuration={200}>
-              <BrowserRouter>{children}</BrowserRouter>
-              <Toaster
-                position="bottom-right"
-                toastOptions={{
-                  classNames: {
-                    toast:
-                      'bg-popover border border-border text-popover-foreground text-sm rounded-lg',
-                  },
-                }}
-              />
-            </TooltipProvider>
-          </PeriodProvider>
+          {/* Personalização depende da sessão (para saber o workspace) e do
+              tema (a cor do acento muda entre claro e escuro). */}
+          <CustomizationProvider>
+            <PeriodProvider>
+              <SidebarProvider>
+                <TooltipProvider delayDuration={200}>
+                  <BrowserRouter>{children}</BrowserRouter>
+                  <Toaster
+                    position="bottom-right"
+                    toastOptions={{
+                      classNames: {
+                        toast:
+                          'bg-popover border border-border text-popover-foreground text-sm rounded-lg',
+                      },
+                    }}
+                  />
+                </TooltipProvider>
+              </SidebarProvider>
+            </PeriodProvider>
+          </CustomizationProvider>
         </SessionProvider>
       </ThemeProvider>
     </QueryClientProvider>

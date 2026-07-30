@@ -5,6 +5,7 @@ import { today } from '@/lib/date'
 import type { Account } from '@/data/types'
 import { useSession } from '@/app/session'
 import { useCreateTransfer } from '@/hooks/data'
+import { DateField } from '@/components/DateField'
 import { MoneyInput } from '@/components/MoneyInput'
 import { Button } from '@/components/ui/button'
 import {
@@ -149,12 +150,7 @@ export function TransferDialog({
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="transfer-date">Data</Label>
-              <Input
-                id="transfer-date"
-                type="date"
-                value={date}
-                onChange={(event) => setDate(event.target.value)}
-              />
+              <DateField id="transfer-date" value={date} onChange={setDate} />
             </div>
           </div>
 

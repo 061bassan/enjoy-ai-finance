@@ -59,6 +59,9 @@
     --glass-border-opacity: 0.08;
 
     --radius: 0.625rem;
+
+    /* Altura das células no desktop. A tela de Aparência sobrescreve. */
+    --density-cell-y: 0.625rem;
   }
 
   .dark {

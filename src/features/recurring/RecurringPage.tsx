@@ -13,6 +13,7 @@ import {
 import type { CostCenter, Frequency, RecurringRule } from '@/data/types'
 import { monthlyEquivalent, nextOccurrence, totalMonthlyCost } from '@/domain/recurrence'
 import { useSession } from '@/app/session'
+import { DateField } from '@/components/DateField'
 import { KpiCard, KpiGrid } from '@/components/KpiCard'
 import { EmptyState, PageHeader } from '@/components/PageHeader'
 import { MoneyInput } from '@/components/MoneyInput'
@@ -435,12 +436,7 @@ function RuleDialog({
 
             <div className="space-y-1.5">
               <Label htmlFor="rule-start">Início</Label>
-              <Input
-                id="rule-start"
-                type="date"
-                value={startDate}
-                onChange={(event) => setStartDate(event.target.value)}
-              />
+              <DateField id="rule-start" value={startDate} onChange={setStartDate} />
             </div>
 
             <div className="space-y-1.5">

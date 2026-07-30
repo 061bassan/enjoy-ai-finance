@@ -22,6 +22,7 @@ import {
 } from '@/domain/commercial'
 import { usePeriod } from '@/app/period'
 import { useSession } from '@/app/session'
+import { DateField } from '@/components/DateField'
 import { KpiCard, KpiGrid } from '@/components/KpiCard'
 import { PageHeader } from '@/components/PageHeader'
 import { MoneyInput } from '@/components/MoneyInput'
@@ -435,11 +436,10 @@ function CommercialDayDialog({
         <form onSubmit={submit} className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="commercial-date">Data</Label>
-            <Input
+            <DateField
               id="commercial-date"
-              type="date"
               value={date}
-              onChange={(event) => setDate(event.target.value)}
+              onChange={setDate}
               className="sm:w-48"
             />
           </div>

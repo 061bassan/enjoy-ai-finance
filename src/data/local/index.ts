@@ -45,6 +45,7 @@ export function createLocalProvider(): DataProvider {
     cards: createRepository(db.cards, 'cards'),
 
     activity: createRepository(db.activity, 'activity'),
+    customizations: createRepository(db.customizations, 'customizations'),
 
     async seedIfEmpty() {
       /**

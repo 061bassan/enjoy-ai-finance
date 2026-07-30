@@ -11,6 +11,7 @@ import { grossRevenue, inRange, netMargin, netProfit } from '@/domain/finance'
 import { summarizeSales } from '@/domain/sales'
 import { daysInPeriod, totalizeCommercial } from '@/domain/commercial'
 import { useSession } from '@/app/session'
+import { DateField, MonthField } from '@/components/DateField'
 import { EmptyState, PageHeader } from '@/components/PageHeader'
 import { MoneyInput } from '@/components/MoneyInput'
 import { Badge } from '@/components/ui/badge'
@@ -333,11 +334,10 @@ function MonthlyTargetDialog({
         <form onSubmit={submit} className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="target-month">Mês</Label>
-            <Input
+            <MonthField
               id="target-month"
-              type="month"
-              value={targetMonth.slice(0, 7)}
-              onChange={(event) => setTargetMonth(`${event.target.value}-01`)}
+              value={targetMonth}
+              onChange={setTargetMonth}
               className="sm:w-48"
             />
           </div>
@@ -701,11 +701,12 @@ function GoalDialog({
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="goal-date">Prazo</Label>
-              <Input
+              <DateField
                 id="goal-date"
-                type="date"
                 value={targetDate}
-                onChange={(event) => setTargetDate(event.target.value)}
+                onChange={setTargetDate}
+                clearable
+                onClear={() => setTargetDate('')}
               />
             </div>
             <div className="space-y-1.5">

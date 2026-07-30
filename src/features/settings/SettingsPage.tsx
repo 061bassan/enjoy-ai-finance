@@ -53,6 +53,7 @@ import {
   useUpdate,
 } from '@/hooks/data'
 import { accountBalance } from '@/domain/finance'
+import { AppearanceTab } from './AppearanceTab'
 
 export function SettingsPage() {
   const { workspace, session, allow } = useSession()
@@ -70,6 +71,7 @@ export function SettingsPage() {
           <TabsTrigger value="accounts">Contas</TabsTrigger>
           <TabsTrigger value="categories">Categorias</TabsTrigger>
           {canAdminister && <TabsTrigger value="members">Equipe</TabsTrigger>}
+          <TabsTrigger value="appearance">Aparência</TabsTrigger>
           <TabsTrigger value="preferences">Preferências</TabsTrigger>
           <TabsTrigger value="data">Dados</TabsTrigger>
         </TabsList>
@@ -85,6 +87,9 @@ export function SettingsPage() {
             <MembersTab />
           </TabsContent>
         )}
+        <TabsContent value="appearance">
+          <AppearanceTab />
+        </TabsContent>
         <TabsContent value="preferences">
           <PreferencesTab />
         </TabsContent>

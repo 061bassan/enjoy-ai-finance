@@ -9,6 +9,7 @@
  * ser síncrona: a assinatura precisa ser a mesma dos dois lados.
  */
 
+import type { Customization } from '@/customization/types'
 import type {
   Account,
   ActivityLog,
@@ -188,6 +189,9 @@ export interface DataProvider {
   cards: Repository<Card>
 
   activity: Repository<ActivityLog>
+
+  /** Aparência e visibilidade escolhidas pelo sócio. Uma linha por workspace. */
+  customizations: Repository<Customization>
 
   /** Popula o workspace de demonstração. Só existe no provider local. */
   seedIfEmpty?(): Promise<void>

@@ -82,7 +82,8 @@ const TableCell = React.forwardRef<
     ref={ref}
     className={cn(
       // Linha mais alta no celular: 44px é o mínimo confortável para o dedo.
-      'px-3 py-3 align-middle sm:py-2.5',
+      // No desktop a altura segue a densidade escolhida em Aparência.
+      'px-3 py-3 align-middle sm:py-[var(--density-cell-y)]',
       '[&[data-numeric]]:text-right [&[data-numeric]]:tabular-nums',
       className,
     )}

@@ -11,6 +11,7 @@ import {
 } from '@/data/enums'
 import { useSession } from '@/app/session'
 import { useCreate, useUpdate } from '@/hooks/data'
+import { DateField } from '@/components/DateField'
 import { MoneyInput } from '@/components/MoneyInput'
 import { Button } from '@/components/ui/button'
 import {
@@ -177,12 +178,7 @@ export function TransactionDialog({
 
             <div className="space-y-1.5">
               <Label htmlFor="date">Data</Label>
-              <Input
-                id="date"
-                type="date"
-                value={date}
-                onChange={(event) => setDate(event.target.value)}
-              />
+              <DateField id="date" value={date} onChange={setDate} />
             </div>
           </div>
 

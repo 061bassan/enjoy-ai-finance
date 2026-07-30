@@ -15,6 +15,7 @@ import type { CostCenter, PurchaseStatus } from '@/data/types'
 import { purchaseAffordability, sortPurchases } from '@/domain/goals'
 import { monthlySeries, totalCash } from '@/domain/finance'
 import { useSession } from '@/app/session'
+import { DateField } from '@/components/DateField'
 import { EmptyState, PageHeader } from '@/components/PageHeader'
 import { MoneyInput } from '@/components/MoneyInput'
 import { Badge } from '@/components/ui/badge'
@@ -382,11 +383,12 @@ function PurchaseDialog({
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="purchase-date">Prazo desejado</Label>
-              <Input
+              <DateField
                 id="purchase-date"
-                type="date"
                 value={targetDate}
-                onChange={(event) => setTargetDate(event.target.value)}
+                onChange={setTargetDate}
+                clearable
+                onClear={() => setTargetDate('')}
               />
             </div>
             <div className="space-y-1.5 sm:col-span-2">
