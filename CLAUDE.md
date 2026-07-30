@@ -264,7 +264,44 @@ Critério de sucesso: **nenhum arquivo de `src/features/` no diff**.
 
 ---
 
-## 9. Armadilhas conhecidas
+## 9. Repositório, CI e deploy
+
+Remoto: **`061bassan/enjoy-ai-finance`** (privado), branch única `main`.
+
+### Deploy — adiado por decisão, não por esquecimento
+
+**Não há ambiente publicado.** A escolha foi consciente: hoje os dados vivem no
+IndexedDB do navegador, então um app publicado seria uma base por dispositivo — abrir a
+URL no celular não mostraria nada do que foi lançado no desktop. Publicar antes da fase 9
+entrega uma promessa que o produto ainda não cumpre.
+
+**A ordem certa é: Supabase primeiro, deploy depois.** Com a persistência no servidor, o
+deploy passa a valer de verdade — e é trivial, porque o build é estático.
+
+Quando chegar a hora, o encaixe natural é a **Vercel** (free tier aceita repo privado,
+detecta Vite sozinho, preview por branch). Duas coisas a lembrar:
+
+- Configurar as variáveis `VITE_*` no painel do serviço — o build as embute, então
+  **qualquer chave ali vira pública**. Só a `anon key` do Supabase pode ir; a proteção
+  real é o RLS.
+- SPA precisa de fallback para `index.html`, senão `/vendas` dá 404 no reload. A Vercel
+  resolve sozinha em projeto Vite; Netlify e Cloudflare exigem `_redirects` ou
+  `netlify.toml`.
+
+### CI — pendência de permissão
+
+`.github/workflows/ci.yml` está escrito (typecheck → lint → testes → build, com o `dist`
+como artefato) mas **não foi commitado**: o token do `gh` nesta máquina não tem o escopo
+`workflow`, e o GitHub recusa o push. Para resolver:
+
+```bash
+gh auth refresh -h github.com -s workflow
+git add .github && git commit -m "Adiciona CI" && git push
+```
+
+---
+
+## 10. Armadilhas conhecidas
 
 - **O projeto vive dentro do OneDrive.** A sincronização pode competir com `node_modules`
   e com o `.git`. Se aparecer erro estranho de arquivo travado, pausar o OneDrive.
