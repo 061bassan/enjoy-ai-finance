@@ -37,7 +37,7 @@ de alguém convidado naquele cargo.
 | Comando | |
 |---|---|
 | `npm run dev` | servidor de desenvolvimento |
-| `npm run test` | 53 testes do domínio |
+| `npm run test` | 80 testes — domínio, personalização e utilitários |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | eslint |
 | `npm run build` | typecheck + build de produção |
@@ -61,14 +61,14 @@ de alguém convidado naquele cargo.
 | `/compras` | Metas de compra com "quando cabe no caixa" |
 | `/kanban` | Drag & drop — soltar em "Pago" liquida o título e lança no caixa |
 | `/relatorios` | Exportação CSV (Excel pt-BR) e impressão/PDF |
-| `/configuracoes` | Contas, categorias, equipe e papéis, tema, backup JSON |
+| `/configuracoes` | Contas, categorias, equipe e papéis, aparência, backup JSON |
 
 ## Stack
 
 Vite · React 18 · TypeScript strict · Tailwind · Radix UI · TanStack Query ·
 React Router (rotas em `lazy`) · Dexie/IndexedDB · Recharts · dnd-kit · Vitest
 
-Bundle inicial de ~178 kB gzip. As telas carregam sob demanda e as bibliotecas pesadas
+Bundle inicial de ~180 kB gzip. As telas carregam sob demanda e as bibliotecas pesadas
 ficam em arquivos próprios, então uma correção de texto não invalida o cache delas.
 
 ## Arquitetura em uma frase
@@ -83,11 +83,15 @@ Nenhuma tela importa Dexie. Trocar a persistência para Supabase é implementar
 
 - **[CLAUDE.md](./CLAUDE.md)** — guia completo para continuar o trabalho: arquitetura,
   invariantes que não podem ser quebradas, convenções, roadmap e armadilhas. **Comece aqui.**
-- **[ESTADO.md](./ESTADO.md)** — histórico das fases 1 a 8.
+- **[ESTADO.md](./ESTADO.md)** — histórico das fases 1 a 8 e do que veio depois.
 
 ## Status
 
 Fases 1–8 concluídas: produto completo, sem dados de exemplo, pronto para uso real.
+Somam-se a elas a personalização visual pelo sócio (acento, densidade, quais KPIs e
+colunas cada tela mostra), o calendário próprio nos campos de data e o menu em grupos
+recolhíveis.
+
 Fase 9 — persistência no Supabase — está escrita em `supabase/migrations/0001_init.sql`
 (com RLS espelhando a matriz de permissões) mas ainda não executada. É o próximo passo.
 

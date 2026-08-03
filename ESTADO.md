@@ -1,12 +1,13 @@
 # Estado do projeto — Enjoy AI Finance
 
-> Fases 1 a 8 concluídas. Produto completo, sem dados de exemplo, pronto para uso real.
+> Fases 1 a 8 concluídas, mais a personalização visual pelo sócio. Produto completo,
+> sem dados de exemplo, pronto para uso real.
 
 ## Como rodar
 
 ```bash
 npm run dev       # http://localhost:5180
-npm run test      # 53 testes do domínio
+npm run test      # 80 testes — domínio, personalização, utilitários
 npm run typecheck # limpo
 npm run lint      # 0 erros
 npm run build     # produção
@@ -35,7 +36,7 @@ zeros. Para recomeçar: **Configurações → Dados → Apagar dados locais**.
 
 ## Peso
 
-Bundle inicial de **~178 kB gzip**. As telas carregam sob demanda e as bibliotecas pesadas
+Bundle inicial de **~180 kB gzip**. As telas carregam sob demanda e as bibliotecas pesadas
 ficam em arquivos próprios (`react`, `charts`, `dnd`, `data`), então uma correção de texto
 não invalida o cache delas. O Recharts (115 kB gzip) só baixa ao abrir uma tela com gráfico.
 
@@ -59,9 +60,28 @@ não invalida o cache delas. O Recharts (115 kB gzip) só baixa ao abrir uma tel
 | `/compras` | Metas de compra com "quando cabe no caixa" |
 | `/kanban` | Drag & drop; soltar em "Pago" liquida o título e lança no caixa |
 | `/relatorios` | Exportação CSV (Excel pt-BR) e impressão/PDF |
-| `/configuracoes` | Contas, categorias, equipe e papéis, tema, backup JSON |
+| `/configuracoes` | Contas, categorias, equipe e papéis, aparência, backup JSON |
 
-**78 arquivos, ~15.600 linhas.**
+**91 arquivos, ~17.200 linhas.**
+
+---
+
+## Depois da fase 8 — personalização pelo sócio
+
+O produto passou a se ajustar sem deploy. Em **Configurações → Aparência** dá para
+escolher o acento e a densidade, decidir quais itens aparecem no menu e quais KPIs e
+colunas cada tela mostra. O catálogo é declarativo (`src/customization/registry.ts`):
+a tela de Aparência é construída a partir dele, então incluir algo na personalização é
+acrescentar uma linha à lista.
+
+Duas fronteiras deliberadas: **ocultar é apresentação, nunca filtro** — o KPI escondido
+continua sendo calculado, senão "limpar a tela" viraria "sumir com a receita"; e **a cor
+entra por acento, não por paleta livre** — só presets validados, para não destruir
+contraste e hierarquia.
+
+Entraram junto o **calendário próprio** nos campos de data (`src/components/DateField.tsx`,
+com `src/lib/dateInput.ts` para digitação) e o **menu em grupos recolhíveis**, que
+substituiu a barra lateral que encolhia.
 
 ---
 
@@ -93,10 +113,11 @@ não invalida o cache delas. O Recharts (115 kB gzip) só baixa ao abrir uma tel
    Para migrar: rodar a migration, implementar `src/data/supabase/` contra os mesmos
    contratos, trocar `VITE_DATA_PROVIDER=supabase`.
 3. ~~**Code splitting**~~ — **feito.** Todas as rotas estão em `React.lazy`
-   (`src/app/routes.tsx`) e o carregamento inicial caiu para ~178 kB gzip.
+   (`src/app/routes.tsx`) e o carregamento inicial caiu para ~180 kB gzip.
 4. **Insights com LLM** — hoje o "AI" do nome se apoia em heurísticas (alertas do
    dashboard, diagnóstico executivo, projeções de meta e de compra).
-5. **Testes de componente** — só o domínio é testado. Exigiria `jsdom` no Vitest.
+5. **Testes de componente** — só lógica é testada (domínio, personalização,
+   utilitários). Exigiria `jsdom` no Vitest.
 
 > Para continuar o trabalho, leia [`CLAUDE.md`](./CLAUDE.md) — traz a arquitetura, as
 > invariantes e o roteiro da Fase 9 em detalhe.

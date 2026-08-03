@@ -3,7 +3,7 @@
 Documento de contexto para quem (pessoa ou agente) pega este projeto sem tê-lo escrito.
 Diz **o que é**, **como está montado**, **por que está montado assim** e **o que fazer em
 seguida**. Complementos: [`README.md`](./README.md) para a visão de produto e
-[`ESTADO.md`](./ESTADO.md) para o histórico das fases 1–8.
+[`ESTADO.md`](./ESTADO.md) para o histórico das fases 1–8 e do que veio depois.
 
 ---
 
@@ -26,17 +26,18 @@ Ver §8 se a intenção for mudar isso.
 
 ### Estado atual
 
-Fases 1–8 concluídas. Produto completo e utilizável, **sem dados de exemplo**, rodando
-100% no navegador (IndexedDB). A fase 9 — persistência real no Supabase — está
-**escrita mas não executada**. É o próximo grande passo.
+Fases 1–8 concluídas, mais a camada de personalização visual pelo sócio (tema, calendário
+próprio, menu em grupos recolhíveis). Produto completo e utilizável, **sem dados de
+exemplo**, rodando 100% no navegador (IndexedDB). A fase 9 — persistência real no
+Supabase — está **escrita mas não executada**. É o próximo grande passo.
 
 | Verificação | Estado |
 |---|---|
-| `npm run test` | 53 testes passando (3 arquivos, domínio) |
+| `npm run test` | 80 testes passando (5 arquivos: domínio, customização, `dateInput`) |
 | `npm run typecheck` | limpo |
-| `npm run lint` | 0 erros, 3 avisos `react-refresh/only-export-components` (inofensivos) |
-| `npm run build` | ok, ~16 s |
-| Bundle inicial | ~178 kB gzip (`react` 51 + `data` 48 + `index` 79) |
+| `npm run lint` | 0 erros, 5 avisos `react-refresh/only-export-components` (inofensivos) |
+| `npm run build` | ok, ~18 s |
+| Bundle inicial | ~180 kB gzip (`react` 51 + `data` 48 + `index` 82) |
 
 ---
 
@@ -107,6 +108,8 @@ src/app/       shell   ├─→  src/hooks/data.ts  ─→  src/data/  ─→  
 src/components/ UI    ─┘         (React Query)      (contratos)
                                       │
                                       └─→  src/domain/  (cálculo puro, sem I/O)
+
+src/customization/     o que cada tela mostra e com que cara (transversal)
 ```
 
 ### `src/data/` — a fronteira
@@ -127,15 +130,33 @@ Se tocar, a camada de contratos falhou — o bug está nela, não na tela.
 ### `src/domain/` — cálculo puro
 
 Funções sem I/O, sem React, sem data-de-hoje implícita (a data entra por parâmetro).
-É a única camada com testes, e é onde vale escrever mais.
+É o núcleo testado do sistema, e é onde vale escrever mais.
 
 `money.ts` · `finance.ts` · `bills.ts` · `cashflow.ts` · `sales.ts` · `commercial.ts` ·
 `goals.ts` · `recurrence.ts`
 
+### `src/customization/` — o que cada tela mostra
+
+Deixa o sócio ajustar acento, densidade, itens do menu e quais KPIs/colunas aparecem,
+sem pedir deploy. `registry.ts` é o catálogo declarativo: a tela de Aparência
+(`features/settings/AppearanceTab.tsx`) é construída a partir dele, então incluir um
+item novo na personalização é acrescentar uma linha à lista.
+
+Duas fronteiras que este módulo **não cruza** — e que são o motivo de ele ser seguro:
+
+- **Ocultar é apresentação, nunca filtro.** Um KPI escondido continua sendo calculado
+  com os mesmos dados. Se ocultar mudasse o número, "limpar a tela" viraria "sumir com
+  a receita" e alguém decidiria errado.
+- **Cor entra por acento, não por paleta livre.** Só presets validados; um seletor RGB
+  aberto destruiria hierarquia visual e contraste.
+
+`locked` marca o que não pode ser escondido — sem cliente e sem valor, a tabela de
+vendas deixa de responder a única pergunta que ela existe para responder.
+
 ### `src/features/` — uma pasta por tela
 
-Cada pasta traz a página e seus diálogos. Sem estado global além de sessão, tema e
-período — que ficam em `src/app/` via context.
+Cada pasta traz a página e seus diálogos. Sem estado global além de sessão, tema,
+período e personalização — que ficam em `src/app/` e `src/customization/` via context.
 
 ### `src/data/rules/permissions.ts` — matriz de papéis
 
@@ -197,7 +218,7 @@ matriz — a matriz guarda só a capacidade.
 | `/compras` | `features/purchases/` | Metas de compra com "quando cabe no caixa" |
 | `/kanban` | `features/kanban/` | Soltar em "Pago" liquida o título e lança no caixa |
 | `/relatorios` | `features/reports/` | CSV (Excel pt-BR) e impressão/PDF |
-| `/configuracoes` | `features/settings/` | Contas, categorias, equipe, tema, backup JSON |
+| `/configuracoes` | `features/settings/` | Contas, categorias, equipe, aparência, backup JSON |
 
 **Operações atômicas** (`src/data/contracts.ts:101`), o coração do sistema:
 
@@ -223,8 +244,9 @@ Cada provider implementa com a transação nativa (Dexie hoje, RPC no Postgres d
   ([`.prettierrc`](./.prettierrc)). Rodar `npm run format`.
 - Componentes de UI em `src/components/ui/` seguem o padrão shadcn (Radix + CVA + `cn`).
   Não instalar shadcn CLI — copiar o estilo dos existentes.
-- Teste novo vai em `src/domain/*.test.ts`. O ambiente Vitest é `node`: não há DOM,
-  então não se testa componente hoje.
+- Teste novo vai ao lado do que ele testa, como `*.test.ts` — hoje em `src/domain/`,
+  `src/customization/` e `src/lib/`. O ambiente Vitest é `node`: não há DOM, então não
+  se testa componente hoje.
 
 ---
 
@@ -312,5 +334,5 @@ git add .github && git commit -m "Adiciona CI" && git push
 - **Dados vivem no IndexedDB do navegador.** Limpar dados do site apaga tudo, e um
   navegador diferente é uma base diferente. Backup: Configurações → backup JSON. Esse é
   o argumento mais forte para a fase 9.
-- **Os 3 avisos de lint** são `react-refresh/only-export-components` em arquivos que
+- **Os 5 avisos de lint** são `react-refresh/only-export-components` em arquivos que
   exportam componente + hook/constante. Custo/benefício não justifica separar.
