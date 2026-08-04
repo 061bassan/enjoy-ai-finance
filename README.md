@@ -30,14 +30,15 @@ Não precisa de `.env` nem de backend: os dados ficam no IndexedDB do navegador.
 O app abre vazio, criando só o esqueleto — dois espaços (Enjoy Scale e Pessoal), uma conta
 em cada, o plano de categorias e o quadro de contas a pagar. Tudo editável em Configurações.
 
-Na entrada escolhe-se **com qual cargo** usar o app — Dono, Administrador, Financeiro,
-Comercial ou Visitante. O cargo é gravado de verdade, então o comportamento é idêntico ao
-de alguém convidado naquele cargo.
+Cria-se uma conta (nome completo, CPF, nascimento, telefone, e-mail e senha) e **pede-se**
+um cargo. Até um sócio liberar em **Configurações → Acessos**, a pessoa só vê a tela de
+espera. O primeiro cadastro vira dono e já entra liberado — não haveria quem aprovasse o
+primeiro pedido.
 
 | Comando | |
 |---|---|
 | `npm run dev` | servidor de desenvolvimento |
-| `npm run test` | 80 testes — domínio, personalização e utilitários |
+| `npm run test` | 168 testes — domínio, provider local e validações |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | eslint |
 | `npm run build` | typecheck + build de produção |
@@ -51,6 +52,7 @@ de alguém convidado naquele cargo.
 | `/performance` | Séries temporais, receita por closer/SDR/canal, funil, centros de custo |
 | `/executivo` | ARR, churn, LTV, LTV/CAC, forecast, burn, runway, diagnóstico |
 | `/vendas` | Vendas com comissões e economia unitária |
+| `/leads` | CRM — quadro por etapa, acompanhamento e conversão do lead em venda |
 | `/comercial` | Diário comercial, funil, CPL, custo por reunião, CAC, win rate, ROI |
 | `/clientes` | Carteira, receita por cliente, churn |
 | `/transacoes` | Lançamentos com filtros |
@@ -61,14 +63,14 @@ de alguém convidado naquele cargo.
 | `/compras` | Metas de compra com "quando cabe no caixa" |
 | `/kanban` | Drag & drop — soltar em "Pago" liquida o título e lança no caixa |
 | `/relatorios` | Exportação CSV (Excel pt-BR) e impressão/PDF |
-| `/configuracoes` | Contas, categorias, equipe e papéis, aparência, backup JSON |
+| `/configuracoes` | Contas, categorias, liberação de acessos, equipe, aparência, backup |
 
 ## Stack
 
 Vite · React 18 · TypeScript strict · Tailwind · Radix UI · TanStack Query ·
 React Router (rotas em `lazy`) · Dexie/IndexedDB · Recharts · dnd-kit · Vitest
 
-Bundle inicial de ~180 kB gzip. As telas carregam sob demanda e as bibliotecas pesadas
+Bundle inicial de ~189 kB gzip. As telas carregam sob demanda e as bibliotecas pesadas
 ficam em arquivos próprios, então uma correção de texto não invalida o cache delas.
 
 ## Arquitetura em uma frase
@@ -89,8 +91,9 @@ Nenhuma tela importa Dexie. Trocar a persistência para Supabase é implementar
 
 Fases 1–8 concluídas: produto completo, sem dados de exemplo, pronto para uso real.
 Somam-se a elas a personalização visual pelo sócio (acento, densidade, quais KPIs e
-colunas cada tela mostra), o calendário próprio nos campos de data e o menu em grupos
-recolhíveis.
+colunas cada tela mostra), o calendário próprio nos campos de data, o menu em grupos
+recolhíveis, o **cadastro com fila de aprovação** e o **CRM de leads** — que fez a taxa
+de conversão do funil passar a ser apurada em vez de digitada.
 
 Fase 9 — persistência no Supabase — está escrita em `supabase/migrations/0001_init.sql`
 (com RLS espelhando a matriz de permissões) mas ainda não executada. É o próximo passo.

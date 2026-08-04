@@ -1,13 +1,13 @@
 # Estado do projeto — Enjoy AI Finance
 
-> Fases 1 a 8 concluídas, mais a personalização visual pelo sócio. Produto completo,
-> sem dados de exemplo, pronto para uso real.
+> Fases 1 a 8 concluídas, mais a personalização visual, o cadastro com aprovação e o CRM
+> de leads. Produto completo, sem dados de exemplo, pronto para uso real.
 
 ## Como rodar
 
 ```bash
 npm run dev       # http://localhost:5180
-npm run test      # 80 testes — domínio, personalização, utilitários
+npm run test      # 168 testes — domínio, provider local, validações
 npm run typecheck # limpo
 npm run lint      # 0 erros
 npm run build     # produção
@@ -15,18 +15,21 @@ npm run build     # produção
 
 ## Entrar
 
-Um único usuário. Na tela de entrada escolhe-se **com qual cargo** entrar — Dono,
-Administrador, Financeiro, Comercial ou Visitante. O cargo é gravado de verdade na tabela
-de membros, então o app se comporta exatamente como se comportaria para alguém convidado
-com aquele cargo. Para trocar: menu do avatar → **Trocar de cargo**.
+Conta de verdade, com senha. Cria-se o cadastro (nome completo, CPF, nascimento,
+telefone, e-mail e senha) e **pede-se** um cargo. Até um sócio liberar em
+**Configurações → Acessos**, a pessoa entra mas só vê a tela de espera.
 
-Quando houver equipe real, `signInAs` sai e o cargo passa a vir só do convite.
+O primeiro cadastro vira dono e já entra liberado — não existiria ninguém para aprovar o
+primeiro pedido. E ninguém aprova o próprio cadastro, senão a fila viraria decoração.
+
+Aprovar e recusar ficam gravados: quem pediu, qual cargo queria, quem decidiu e por quê.
 
 ## O app abre vazio
 
-Não há nenhum dado de exemplo. A primeira abertura cria só o esqueleto: o usuário, os
-espaços **Enjoy Scale** e **Pessoal**, uma conta em cada, o plano de categorias e o quadro
-de contas a pagar. Tudo editável em Configurações.
+Não há nenhum dado de exemplo — e antes do primeiro cadastro o banco está literalmente
+vazio. Os espaços **Enjoy Scale** e **Pessoal**, uma conta em cada, o plano de categorias
+e o quadro de contas a pagar nascem junto com a conta do fundador. Tudo editável em
+Configurações.
 
 O painel mostra **Primeiros passos** enquanto nada foi lançado, em vez de uma parede de
 zeros. Para recomeçar: **Configurações → Dados → Apagar dados locais**.
@@ -60,9 +63,10 @@ não invalida o cache delas. O Recharts (115 kB gzip) só baixa ao abrir uma tel
 | `/compras` | Metas de compra com "quando cabe no caixa" |
 | `/kanban` | Drag & drop; soltar em "Pago" liquida o título e lança no caixa |
 | `/relatorios` | Exportação CSV (Excel pt-BR) e impressão/PDF |
-| `/configuracoes` | Contas, categorias, equipe e papéis, aparência, backup JSON |
+| `/leads` | CRM — quadro por etapa, acompanhamento, conversão do lead em venda |
+| `/configuracoes` | Contas, categorias, liberação de acessos, equipe, aparência, backup |
 
-**91 arquivos, ~17.200 linhas.**
+**105 arquivos, ~21.000 linhas.**
 
 ---
 
@@ -82,6 +86,44 @@ contraste e hierarquia.
 Entraram junto o **calendário próprio** nos campos de data (`src/components/DateField.tsx`,
 com `src/lib/dateInput.ts` para digitação) e o **menu em grupos recolhíveis**, que
 substituiu a barra lateral que encolhia.
+
+---
+
+## Cadastro com aprovação
+
+O seletor de cargo da tela de entrada saiu. Em lugar dele há conta com senha, cadastro
+com dados pessoais (nome, CPF, nascimento, telefone) e uma fila que o sócio decide.
+
+Três regras sustentam o desenho:
+
+1. **Quem pede não recebe o cargo na hora.** Fica `pending` com o cargo guardado em
+   `requestedRole`; até a decisão, é tratado como visitante sem permissão nenhuma.
+2. **Quem espera vê que o pedido chegou.** A tela de espera repete nome, e-mail, cargo
+   pedido e data. Devolver ao login faria a pessoa achar que falhou e recadastrar.
+3. **A decisão é um fato gravado.** Recusar faz `update`, nunca `delete` — senão a mesma
+   pessoa se recadastraria sem ninguém lembrar da decisão anterior.
+
+A senha é derivada com PBKDF2 antes de tocar o banco. Não protege de quem tem o
+dispositivo — protege o **backup JSON**, que circula por e-mail e sai sem hash nenhum.
+
+---
+
+## CRM de leads
+
+O funil comercial sempre teve o lugar da taxa de conversão, mas nunca conseguiu
+calculá-la: os dois lados da conta vinham do mesmo formulário digitado, e nada nele
+conhecia a tela de Vendas. O número existia e não significava nada.
+
+Agora cada lead é uma linha com nome, telefone, responsável e etapa. Quando um lead é
+marcado como ganho, ele passa pelo formulário de conversão e vira **cliente, venda e
+títulos a receber** numa transação só (`convertLeadToSale`).
+
+Com isso, **conversão = vendas registradas ÷ leads que entraram** — as duas pontas
+apuradas, nenhuma digitada. O funil marca com "apurado" as etapas que vieram de fato
+registrado, para separá-las das que ainda dependem do diário comercial.
+
+O quadro não é filtrado pelo seletor de período: um lead aberto há três meses continua
+sendo trabalho de hoje. O período recorta as métricas, não a carteira.
 
 ---
 
@@ -116,8 +158,13 @@ substituiu a barra lateral que encolhia.
    (`src/app/routes.tsx`) e o carregamento inicial caiu para ~180 kB gzip.
 4. **Insights com LLM** — hoje o "AI" do nome se apoia em heurísticas (alertas do
    dashboard, diagnóstico executivo, projeções de meta e de compra).
-5. **Testes de componente** — só lógica é testada (domínio, personalização,
-   utilitários). Exigiria `jsdom` no Vitest.
+5. **Testes de componente** — só lógica é testada (domínio, provider local, validações).
+   Exigiria `jsdom` no Vitest.
+6. **`convert_lead_to_sale` no Postgres** — a única operação atômica sem equivalente na
+   migration. Precisa gerar os títulos com a mesma regra de `buildReceivables`, e
+   escrever essa lógica duas vezes garante divergência. Ver CLAUDE.md §8.
+7. **Recuperação de senha** — não existe no modo local: sem servidor não há e-mail para
+   enviar link. Chega junto com o Supabase Auth.
 
 > Para continuar o trabalho, leia [`CLAUDE.md`](./CLAUDE.md) — traz a arquitetura, as
 > invariantes e o roteiro da Fase 9 em detalhe.

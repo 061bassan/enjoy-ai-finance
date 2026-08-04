@@ -26,18 +26,18 @@ Ver §8 se a intenção for mudar isso.
 
 ### Estado atual
 
-Fases 1–8 concluídas, mais a camada de personalização visual pelo sócio (tema, calendário
-próprio, menu em grupos recolhíveis). Produto completo e utilizável, **sem dados de
-exemplo**, rodando 100% no navegador (IndexedDB). A fase 9 — persistência real no
-Supabase — está **escrita mas não executada**. É o próximo grande passo.
+Fases 1–8 concluídas, mais a personalização visual pelo sócio, o **cadastro com fila de
+aprovação** e o **CRM de leads**. Produto completo e utilizável, **sem dados de exemplo**,
+rodando 100% no navegador (IndexedDB). A fase 9 — persistência real no Supabase — está
+**escrita mas não executada**. É o próximo grande passo.
 
 | Verificação | Estado |
 |---|---|
-| `npm run test` | 80 testes passando (5 arquivos: domínio, customização, `dateInput`) |
+| `npm run test` | 168 testes passando (10 arquivos: domínio, provider local, validações) |
 | `npm run typecheck` | limpo |
 | `npm run lint` | 0 erros, 5 avisos `react-refresh/only-export-components` (inofensivos) |
-| `npm run build` | ok, ~18 s |
-| Bundle inicial | ~180 kB gzip (`react` 51 + `data` 48 + `index` 82) |
+| `npm run build` | ok, ~14 s |
+| Bundle inicial | ~189 kB gzip (`react` 51 + `data` 48 + `index` 90) |
 
 ---
 
@@ -56,21 +56,45 @@ npm run preview    # serve o dist/
 Sem `.env` obrigatório: `VITE_DATA_PROVIDER` cai em `local` quando ausente.
 Ver [`.env.example`](./.env.example).
 
-### Entrar no app
+### Entrar no app — cadastro com aprovação
 
-Um único usuário, sem senha real. A tela de entrada pede **com qual cargo** entrar —
-Dono, Administrador, Financeiro, Comercial ou Visitante. O cargo é **gravado de verdade**
-na tabela de membros, então o app se comporta exatamente como se comportaria para alguém
-convidado naquele cargo — não é um truque de sessão. Trocar: menu do avatar →
-**Trocar de cargo**.
+Há conta de verdade, com senha. O fluxo:
 
-Isso é o `signInAs` em `src/data/contracts.ts:85`. Quando houver equipe real, essa função
-**sai** e o cargo passa a vir só do convite.
+1. **Criar conta** — nome completo, CPF, data de nascimento, telefone, e-mail e senha.
+   Tudo validado em `src/lib/validators.ts` (o CPF confere os dígitos verificadores).
+2. **Escolher o cargo desejado** — Administrador, Financeiro, Comercial ou Visitante.
+   É um *pedido*, não uma escolha: fica em `requestedRole`.
+3. **Enviar** — a pessoa entra, mas com vínculo `pending`. A única tela que vê é
+   **Aguardando liberação** (`features/auth/PendingAccessPage.tsx`), que repete o que foi
+   enviado. Sem esse recibo, quem se cadastra tenta de novo e a fila enche de duplicados.
+4. **Um sócio decide** em **Configurações → Acessos**. Aprovar concede o cargo pedido (ou
+   outro); recusar **mantém a linha no banco** com quem pediu, quem decidiu e por quê.
+
+Duas regras que sustentam o desenho:
+
+- **O primeiro cadastro vira dono e já entra liberado.** Não existiria ninguém para
+  aprovar o primeiro pedido — o produto travaria no primeiro uso (`isFirstMember`).
+- **Ninguém aprova o próprio cadastro.** Sem isso, quem entrasse com qualquer vínculo
+  administrativo poderia se promover sozinho e a fila viraria decoração.
+
+> O antigo `signInAs` — o seletor de cargo na tela de entrada — **saiu**. Para ver o
+> produto pelos olhos de outra função, mude o cargo de um membro em
+> **Configurações → Equipe**.
+
+A senha é derivada com PBKDF2 (`src/lib/password.ts`) antes de tocar o banco. **Isso não
+é segurança de verdade** e o arquivo diz isso na primeira linha: no modo local, quem tem
+o dispositivo tem o IndexedDB. Existe por duas razões concretas — a senha em claro nunca
+entra no backup JSON que circula por e-mail, e a assinatura `signIn(email, senha)` é a
+mesma que o Supabase Auth vai ter.
 
 ### O app abre vazio — de propósito
 
-A primeira abertura cria só o esqueleto: o usuário, os espaços **Enjoy Scale** e
-**Pessoal**, uma conta em cada, o plano de categorias e o quadro de contas a pagar.
+Antes de qualquer cadastro **o banco está vazio**: nem usuário, nem espaços. Os espaços
+**Enjoy Scale** e **Pessoal**, as contas, o plano de categorias e o quadro de contas a
+pagar nascem no primeiro cadastro (`seedWorkspacesFor`). Antes o app criava um usuário
+fantasma na primeira abertura — uma conta sem dono e sem senha, que perdeu o sentido
+quando o cadastro passou a ser real.
+
 O dashboard mostra **Primeiros passos** enquanto nada foi lançado, em vez de uma parede
 de zeros. Recomeçar: **Configurações → Dados → Apagar dados locais**.
 
@@ -92,7 +116,7 @@ de zeros. Recomeçar: **Configurações → Dados → Apagar dados locais**.
 | Drag & drop | dnd-kit |
 | Datas | date-fns 4 |
 | Toasts | sonner |
-| Testes | Vitest 2, ambiente `node`, só `src/**/*.test.ts` |
+| Testes | Vitest 2, ambiente `node`, só `src/**/*.test.ts` (+ `fake-indexeddb`) |
 
 Alias `@` → `src/` (em `vite.config.ts` **e** `tsconfig.json` — mudar nos dois).
 
@@ -133,7 +157,12 @@ Funções sem I/O, sem React, sem data-de-hoje implícita (a data entra por par�
 É o núcleo testado do sistema, e é onde vale escrever mais.
 
 `money.ts` · `finance.ts` · `bills.ts` · `cashflow.ts` · `sales.ts` · `commercial.ts` ·
-`goals.ts` · `recurrence.ts`
+`goals.ts` · `recurrence.ts` · `leads.ts` · `membership.ts`
+
+`leads.ts` é onde mora a **taxa de conversão** (`conversionRate`): vendas reais ÷ leads.
+`membership.ts` guarda as regras da fila de aprovação — as mesmas que a UI, o provider
+local e a função RPC do Postgres precisam aplicar. Regra escrita três vezes diverge na
+terceira.
 
 ### `src/customization/` — o que cada tela mostra
 
@@ -197,6 +226,19 @@ matriz — a matriz guarda só a capacidade.
     de escopo — é a chave de isolamento e a coluna que o RLS vai usar.
 11. **Transação vinda de baixa de título não pode ser excluída** direto. Desfaz-se a baixa
     (`unsettleBillPayment`), que remove a transação e reabre o título.
+12. **Lead e cliente são entidades diferentes.** Lead é quem talvez compre; cliente é quem
+    já comprou. Misturar faria a carteira inflar com gente que nunca pagou, e todo
+    indicador de receita por cliente ficaria errado. A ponte é `convertLeadToSale`.
+13. **Lead marcado como ganho tem venda atrás.** O "ganho" nunca é só uma etiqueta —
+    passa pelo formulário de conversão, que cria cliente, venda e títulos. É o que faz a
+    conversão do funil ser apurada em vez de digitada.
+14. **Cargo só vale com vínculo `active`.** Um pendente que pediu "Administrador" é
+    tratado como visitante até a decisão, e `allow()` devolve `false` para tudo.
+15. **Recusa não apaga linha.** Quem pediu, qual cargo queria, quem decidiu e por quê
+    ficam no banco. Apagar deixaria a mesma pessoa recadastrando sem ninguém lembrar.
+16. **O backup JSON não carrega senha.** `exportWorkspace` zera `passwordHash`, e o
+    import preserva o hash de quem já está na base — senão reimportar o próprio backup
+    trancaria a pessoa para fora.
 
 ---
 
@@ -208,6 +250,7 @@ matriz — a matriz guarda só a capacidade.
 | `/performance` | `features/performance/` | Séries temporais, receita por closer/SDR/canal, funil |
 | `/executivo` | `features/executive/` | ARR, churn, LTV, LTV/CAC, forecast, burn, runway |
 | `/vendas` | `features/sales/` | Vendas com comissões e economia unitária |
+| `/leads` | `features/leads/` | CRM: quadro por etapa, acompanhamento, conversão em venda |
 | `/comercial` | `features/commercial/` | Diário comercial, CPL, custo/reunião, CAC, win rate |
 | `/clientes` | `features/clients/` | Carteira, receita por cliente, churn |
 | `/transacoes` | `features/transactions/` | CRUD com filtros |
@@ -218,7 +261,7 @@ matriz — a matriz guarda só a capacidade.
 | `/compras` | `features/purchases/` | Metas de compra com "quando cabe no caixa" |
 | `/kanban` | `features/kanban/` | Soltar em "Pago" liquida o título e lança no caixa |
 | `/relatorios` | `features/reports/` | CSV (Excel pt-BR) e impressão/PDF |
-| `/configuracoes` | `features/settings/` | Contas, categorias, equipe, aparência, backup JSON |
+| `/configuracoes` | `features/settings/` | Contas, categorias, **acessos**, equipe, aparência, backup |
 
 **Operações atômicas** (`src/data/contracts.ts:101`), o coração do sistema:
 
@@ -226,6 +269,11 @@ matriz — a matriz guarda só a capacidade.
   atualiza o `Bill`. É o "previsto vira realizado".
 - `createSaleWithReceivables` — venda + títulos a receber (setup + parcelas de MRR).
 - `moveCard` — move o card e executa a ação da coluna de destino (`onDropAction`).
+- `convertLeadToSale` — lead ganho vira cliente + venda + títulos numa transação só.
+  Reaproveita o cliente quando o lead já aponta para um, senão a carteira duplicaria.
+- `moveLeadStage` — muda a etapa e grava a mudança na linha do tempo. O histórico é
+  escrito pelo sistema para distinguir "lead parado" de "lead que ninguém anotou".
+- `approveMember` / `rejectMember` — decisão sobre um pedido de acesso, com autor e data.
 - `generateBillsFromRule` · `createTransfer` · `unsettleBillPayment` ·
   `exportWorkspace` / `importWorkspace`.
 
@@ -245,8 +293,10 @@ Cada provider implementa com a transação nativa (Dexie hoje, RPC no Postgres d
 - Componentes de UI em `src/components/ui/` seguem o padrão shadcn (Radix + CVA + `cn`).
   Não instalar shadcn CLI — copiar o estilo dos existentes.
 - Teste novo vai ao lado do que ele testa, como `*.test.ts` — hoje em `src/domain/`,
-  `src/customization/` e `src/lib/`. O ambiente Vitest é `node`: não há DOM, então não
-  se testa componente hoje.
+  `src/customization/`, `src/lib/` e `src/data/local/`. O ambiente Vitest é `node`: não
+  há DOM, então não se testa componente. Os testes de `src/data/local/` usam
+  `fake-indexeddb/auto` para rodar contra o banco de verdade — é onde os bugs de
+  consistência aparecem, porque cada peça isolada parece correta.
 
 ---
 
@@ -254,17 +304,36 @@ Cada provider implementa com a transação nativa (Dexie hoje, RPC no Postgres d
 
 ### Fase 9 — Supabase (o próximo passo real)
 
-`supabase/migrations/0001_init.sql` está escrito, com RLS espelhando
-`src/data/rules/permissions.ts`, mas **nunca foi executado**. Roteiro:
+Duas migrations escritas, **nenhuma executada**:
 
-1. Criar o projeto no Supabase e rodar a migration.
+- `supabase/migrations/0001_init.sql` — schema base, RLS espelhando
+  `src/data/rules/permissions.ts`.
+- `supabase/migrations/0002_auth_and_leads.sql` — dados pessoais no perfil, estados
+  `pending`/`rejected` no vínculo, tabelas `leads` e `lead_activities`, o trigger
+  `handle_new_user` (materializa o perfil a partir do `auth.users`) e as funções RPC
+  `approve_member`, `reject_member`, `move_lead_stage`.
+
+Roteiro:
+
+1. Criar o projeto no Supabase e rodar as duas migrations, nesta ordem.
 2. Implementar `src/data/supabase/` contra os **mesmos contratos** — `repository.ts`,
-   `auth.ts`, `operations.ts` (as atômicas viram funções RPC no Postgres).
-3. Preencher `.env` e trocar `VITE_DATA_PROVIDER=supabase`.
-4. Migrar os dados locais com `exportWorkspace` → `importWorkspace`.
-5. `signInAs` sai; o cargo passa a vir do convite.
+   `auth.ts`, `operations.ts` (as atômicas chamam as RPC acima).
+3. Escrever `convert_lead_to_sale` no Postgres. **Ela ficou de fora da 0002 de
+   propósito**: precisa gerar os títulos com exatamente a mesma regra de
+   `buildReceivables` (setup + uma parcela por mês, resto nas primeiras). Escrever a
+   lógica duas vezes garante divergência — uma venda vinda do CRM parcelaria diferente
+   de uma digitada, e ninguém descobriria porque os dois caminhos parecem certos
+   sozinhos. O caminho é uma função só, chamada pelos dois fluxos.
+4. Preencher `.env` e trocar `VITE_DATA_PROVIDER=supabase`.
+5. Migrar os dados locais com `exportWorkspace` → `importWorkspace`. Lembre que o
+   backup não leva senha: cada pessoa define a dela no primeiro acesso.
+6. `src/lib/password.ts` sai — quem guarda credencial passa a ser o `auth.users`.
 
 Critério de sucesso: **nenhum arquivo de `src/features/` no diff**.
+
+Os testes de `src/data/local/auth.test.ts` e `leadOperations.test.ts` são o contrato que
+o provider novo precisa satisfazer. Se `signUp` no Supabase se comportar diferente do
+local, a diferença aparece ali e não em produção.
 
 > Há um MCP do Supabase disponível na sessão — dá para listar tabelas, aplicar migration
 > e gerar os tipos TypeScript sem sair do editor.
@@ -333,6 +402,12 @@ git add .github && git commit -m "Adiciona CI" && git push
 - **`.env` é ignorado pelo git**, `.env.example` não. Nunca comitar credencial do Supabase.
 - **Dados vivem no IndexedDB do navegador.** Limpar dados do site apaga tudo, e um
   navegador diferente é uma base diferente. Backup: Configurações → backup JSON. Esse é
-  o argumento mais forte para a fase 9.
+  o argumento mais forte para a fase 9 — e agora vale também para as **contas de
+  acesso**: um cadastro feito no desktop não existe no celular.
+- **Não há recuperação de senha.** Sem servidor não há e-mail para enviar link. Se
+  alguém esquecer a senha no modo local, o caminho é o dono apagar o perfil e a pessoa
+  se cadastrar de novo. Some junto com a fase 9.
+- **A validação de CPF confere os dígitos, não a existência.** Um CPF válido mas de
+  outra pessoa passa. Quem confere isso é quem aprova, olhando a fila.
 - **Os 5 avisos de lint** são `react-refresh/only-export-components` em arquivos que
   exportam componente + hook/constante. Custo/benefício não justifica separar.
