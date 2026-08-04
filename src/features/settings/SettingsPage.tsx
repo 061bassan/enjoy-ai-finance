@@ -16,6 +16,7 @@ import type { Account, AccountType, CategoryKind, CostCenter, Role } from '@/dat
 import { assignableRoles } from '@/data/rules/permissions'
 import { useSession } from '@/app/session'
 import { useTheme } from '@/app/theme'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { EmptyState, PageHeader } from '@/components/PageHeader'
 import { MoneyInput } from '@/components/MoneyInput'
 import { Avatar, AvatarFallback, initialsOf } from '@/components/ui/avatar'
@@ -53,11 +54,16 @@ import {
   useUpdate,
 } from '@/hooks/data'
 import { accountBalance } from '@/domain/finance'
+import { pendingRequests } from '@/domain/membership'
+import { AccessRequestsTab } from './AccessRequestsTab'
 import { AppearanceTab } from './AppearanceTab'
 
 export function SettingsPage() {
   const { workspace, session, allow } = useSession()
-  const canAdminister = allow('manage:workspace')
+  const canAdminister = allow('manage:members')
+  const { data: members = [] } = useMembers()
+
+  const pendingCount = React.useMemo(() => pendingRequests(members).length, [members])
 
   return (
     <>
@@ -66,10 +72,23 @@ export function SettingsPage() {
         description={workspace ? `Workspace ${workspace.name}` : undefined}
       />
 
-      <Tabs defaultValue="accounts">
+      <Tabs defaultValue={pendingCount > 0 && canAdminister ? 'access' : 'accounts'}>
         <TabsList>
           <TabsTrigger value="accounts">Contas</TabsTrigger>
           <TabsTrigger value="categories">Categorias</TabsTrigger>
+          {canAdminister && (
+            <TabsTrigger value="access">
+              Acessos
+              {/* O contador é a única pista de que alguém está esperando —
+                  sem ele, um pedido pode ficar semanas parado sem ninguém
+                  abrir a aba. */}
+              {pendingCount > 0 && (
+                <Badge className="ml-1.5 h-4 min-w-4 justify-center px-1 text-[10px]">
+                  {pendingCount}
+                </Badge>
+              )}
+            </TabsTrigger>
+          )}
           {canAdminister && <TabsTrigger value="members">Equipe</TabsTrigger>}
           <TabsTrigger value="appearance">Aparência</TabsTrigger>
           <TabsTrigger value="preferences">Preferências</TabsTrigger>
@@ -82,6 +101,11 @@ export function SettingsPage() {
         <TabsContent value="categories">
           <CategoriesTab />
         </TabsContent>
+        {canAdminister && (
+          <TabsContent value="access">
+            <AccessRequestsTab />
+          </TabsContent>
+        )}
         {canAdminister && (
           <TabsContent value="members">
             <MembersTab />
@@ -377,12 +401,20 @@ function CategoriesTab() {
 
 function MembersTab() {
   const { session } = useSession()
-  const { data: members = [] } = useMembers()
+  const { data: allMembers = [] } = useMembers()
   const profiles = useProfileMap()
   const update = useUpdate('members', data.members)
 
   const myRole = session?.role
   const canAssign = assignableRoles(myRole)
+
+  // Quem está na equipe é quem já foi liberado. Pendentes e recusados vivem
+  // na aba Acessos — misturar os dois faria a lista de equipe sugerir que
+  // alguém já opera o sistema quando ainda está esperando decisão.
+  const members = React.useMemo(
+    () => allMembers.filter((member) => member.status === 'active'),
+    [allMembers],
+  )
 
   async function changeRole(memberId: string, role: Role) {
     await update.mutateAsync({ id: memberId, patch: { role } })
@@ -495,6 +527,7 @@ function PreferencesTab() {
 
 function DataTab({ workspaceId }: { workspaceId: string }) {
   const [importing, setImporting] = React.useState(false)
+  const [resetOpen, setResetOpen] = React.useState(false)
   const fileInput = React.useRef<HTMLInputElement>(null)
 
   async function exportData() {
@@ -563,21 +596,27 @@ function DataTab({ workspaceId }: { workspaceId: string }) {
       <Card className="border-negative/30 p-4">
         <h3 className="text-sm font-medium">Recomeçar do zero</h3>
         <p className="mt-1 text-sm text-muted-foreground">
-          Apaga todos os dados locais e recria a base de demonstração na próxima abertura. Não há
-          desfazer.
+          Apaga todos os dados deste navegador, inclusive as contas de acesso. Não há desfazer.
         </p>
         <Separator className="my-4" />
-        <Button
-          variant="destructive"
-          onClick={async () => {
-            if (!confirm('Apagar todos os dados locais? Esta ação não pode ser desfeita.')) return
-            await data.reset?.()
-            window.location.reload()
-          }}
-        >
+        <Button variant="destructive" onClick={() => setResetOpen(true)}>
           <Trash2 /> Apagar dados locais
         </Button>
       </Card>
+
+      <ConfirmDialog
+        open={resetOpen}
+        onOpenChange={setResetOpen}
+        destructive
+        title="Apagar todos os dados locais"
+        description="Lançamentos, vendas, leads e contas de acesso deste navegador serão removidos. Exporte um backup antes se quiser guardar algo."
+        confirmationText="APAGAR"
+        confirmLabel="Apagar tudo"
+        onConfirm={async () => {
+          await data.reset?.()
+          window.location.reload()
+        }}
+      />
     </div>
   )
 }

@@ -20,6 +20,8 @@ import {
   daysInPeriod,
   totalizeCommercial,
 } from '@/domain/commercial'
+import { conversionRate, leadsInPeriod } from '@/domain/leads'
+import { activeSales } from '@/domain/sales'
 import { usePeriod } from '@/app/period'
 import { useSession } from '@/app/session'
 import { DateField } from '@/components/DateField'
@@ -49,7 +51,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { ChartFrame, ChartTooltip, chartColor } from '@/components/charts/primitives'
-import { useCommercialDays, useCreate, useSales } from '@/hooks/data'
+import { useCommercialDays, useCreate, useLeads, useSales } from '@/hooks/data'
 
 export function CommercialPage() {
   const { range } = usePeriod()
@@ -58,6 +60,7 @@ export function CommercialPage() {
 
   const { data: days = [] } = useCommercialDays()
   const { data: sales = [] } = useSales()
+  const { data: leads = [] } = useLeads()
   const [dialogOpen, setDialogOpen] = React.useState(false)
 
   const metrics = React.useMemo(() => {
@@ -66,14 +69,38 @@ export function CommercialPage() {
     const periodSales = sales.filter(
       (sale) => sale.saleDate >= range.from && sale.saleDate <= range.to,
     )
+    const activePeriodSales = activeSales(periodSales)
+    const periodLeads = leadsInPeriod(leads, range)
+
+    /**
+     * A conversão que o funil sempre teve lugar para mostrar, mas nunca
+     * conseguiu calcular: vendas ÷ leads.
+     *
+     * As duas pontas agora são fatos registrados — a venda vem da tela de
+     * Vendas, o lead vem do CRM. Antes, os dois lados saíam do mesmo
+     * formulário digitado, então o número só dizia se a pessoa tinha somado
+     * direito no fim do dia.
+     */
+    const conversion = conversionRate({
+      leads,
+      sales,
+      range,
+      diaryLeadCount: totals.leads,
+    })
+
     return {
       period,
       totals,
+      conversion,
+      leadCount: periodLeads.length,
       kpis: commercialKpis(totals, periodSales),
-      funnel: buildFunnel(totals),
+      funnel: buildFunnel(totals, {
+        leadCount: periodLeads.length,
+        salesCount: activePeriodSales.length,
+      }),
       series: commercialSeries(period),
     }
-  }, [days, sales, range])
+  }, [days, sales, leads, range])
 
   return (
     <>
@@ -90,7 +117,25 @@ export function CommercialPage() {
       />
 
       <KpiGrid className="mb-4">
-        <KpiCard label="Leads" value={formatNumber(metrics.totals.leads)} />
+        <KpiCard
+          label="Conversão lead → venda"
+          value={metrics.conversion.ratio != null ? formatPercent(metrics.conversion.ratio) : '—'}
+          secondary={`${formatNumber(metrics.conversion.saleCount)} vendas ÷ ${formatNumber(
+            metrics.conversion.leadCount,
+          )} leads`}
+          hint={
+            metrics.conversion.origin === 'crm'
+              ? 'Vendas registradas no período divididas pelos leads que entraram no CRM. Os dois números são apurados — nenhum é digitado.'
+              : metrics.conversion.origin === 'diario'
+                ? 'Os leads vêm do registro diário abaixo, e as vendas da tela de Vendas. Cadastre os leads em Comercial → Leads para o número deixar de depender de digitação.'
+                : 'Sem leads no período — não há denominador para a conta.'
+          }
+        />
+        <KpiCard
+          label="Leads"
+          value={formatNumber(metrics.conversion.leadCount)}
+          secondary={metrics.leadCount > 0 ? 'do CRM' : 'do registro diário'}
+        />
         <KpiCard label="Calls" value={formatNumber(metrics.totals.calls)} />
         <KpiCard label="Reuniões" value={formatNumber(metrics.totals.meetings)} />
         <KpiCard
@@ -151,7 +196,17 @@ export function CommercialPage() {
               <li key={stage.key}>
                 <div className="mb-1 flex items-baseline justify-between gap-2 text-sm">
                   <span className="flex items-baseline gap-2">
-                    <span>{stage.label}</span>
+                    <span className={stage.measured ? 'font-medium' : undefined}>
+                      {stage.label}
+                    </span>
+                    {/* Etapa apurada pelo sistema aparece marcada: um número
+                        que veio de uma venda registrada merece confiança
+                        diferente de um que alguém somou de cabeça. */}
+                    {stage.measured && (
+                      <span className="rounded bg-accent px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                        apurado
+                      </span>
+                    )}
                     {stage.conversionFromPrevious != null && (
                       <span className="text-xs text-muted-foreground">
                         {formatPercent(stage.conversionFromPrevious)} da etapa anterior

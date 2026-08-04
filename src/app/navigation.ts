@@ -15,6 +15,7 @@ import {
   Settings,
   ShoppingBag,
   Trello,
+  UserPlus,
   Wallet,
 } from 'lucide-react'
 import type { Permission } from '@/data/rules/permissions'
@@ -60,6 +61,9 @@ export const NAVIGATION: NavGroup[] = [
   {
     label: 'Comercial',
     items: [
+      // Leads vem antes de Vendas porque é a ordem em que as coisas
+      // acontecem: primeiro alguém chega, depois compra.
+      { to: '/leads', label: 'Leads', icon: UserPlus, teamOnly: true },
       { to: '/vendas', label: 'Vendas', icon: Handshake, teamOnly: true },
       { to: '/comercial', label: 'Funil de vendas', icon: ClipboardList, teamOnly: true },
       { to: '/clientes', label: 'Clientes', icon: Banknote, teamOnly: true },

@@ -42,6 +42,24 @@ export interface Profile extends BaseEntity {
   avatarUrl?: string | null
   /** Usado para atribuir vendas quando a pessoa também é closer/SDR. */
   jobTitle?: string | null
+
+  /**
+   * Dados pessoais coletados no cadastro.
+   *
+   * Existem para que quem aprova saiba quem está aprovando: um nome e um
+   * e-mail não bastam para decidir se aquela pessoa é mesmo do time. CPF e
+   * nascimento são opcionais no tipo porque perfis criados antes desta tela
+   * não os têm — a validação de obrigatoriedade mora no cadastro, não aqui.
+   */
+  cpf?: string | null
+  birthDate?: IsoDate | null
+  phone?: string | null
+
+  /**
+   * Registro PBKDF2 da senha (ver `@/lib/password`). Nunca a senha em claro.
+   * `null` em perfis legados, que precisam definir senha no primeiro acesso.
+   */
+  passwordHash?: string | null
 }
 
 export type WorkspaceType = 'team' | 'personal'
@@ -71,12 +89,37 @@ export interface Workspace extends BaseEntity {
  */
 export type Role = 'owner' | 'admin' | 'finance' | 'sales' | 'viewer'
 
+/**
+ * Situação do vínculo de uma pessoa com o workspace.
+ *
+ * - `pending`   pediu acesso e aguarda decisão do sócio. Entra no app, mas
+ *               só enxerga a tela de espera.
+ * - `active`    aprovado, opera no cargo de `role`.
+ * - `rejected`  recusado. A linha **fica no banco** de propósito: quem pediu,
+ *               quando, qual cargo queria, quem recusou e por quê. Apagar
+ *               apagaria o histórico da decisão.
+ * - `invited`   convidado pela equipe, ainda não entrou.
+ * - `suspended` teve o acesso cortado sem perder o histórico.
+ */
+export type MemberStatus = 'pending' | 'active' | 'rejected' | 'invited' | 'suspended'
+
 export interface WorkspaceMember extends BaseEntity {
   workspaceId: Id
   userId: Id
+  /**
+   * Cargo efetivo. Enquanto `status` não é `active`, vale `viewer` — ninguém
+   * recebe poder antes da aprovação, mesmo tendo pedido outro cargo.
+   */
   role: Role
   invitedBy?: Id | null
-  status: 'active' | 'invited' | 'suspended'
+  status: MemberStatus
+
+  /** Cargo que a pessoa pediu no cadastro. Vira `role` quando aprovada. */
+  requestedRole?: Role | null
+  /** Quem decidiu, quando, e o motivo — preenchidos na aprovação/recusa. */
+  decidedBy?: Id | null
+  decidedAt?: Timestamp | null
+  decisionNote?: string | null
 }
 
 // ---------------------------------------------------------------------------
@@ -267,6 +310,114 @@ export interface Client extends ScopedEntity {
 }
 
 // ---------------------------------------------------------------------------
+// Leads — o funil pessoa a pessoa
+// ---------------------------------------------------------------------------
+
+/**
+ * Etapas do funil, na ordem.
+ *
+ * São as mesmas etapas que o diário comercial já contava de forma agregada
+ * (`leads`, `calls`, `meetings`, `proposalsSent`...). A diferença é que aqui
+ * cada etapa é ocupada por *alguém* com nome e telefone — e é isso que
+ * permite a conversão sair sozinha, sem ninguém digitar o total do dia.
+ *
+ * `ganho` e `perdido` são terminais: um lead sai do funil por uma das duas
+ * portas, nunca pelas duas.
+ */
+export type LeadStage =
+  | 'novo'
+  | 'contato'
+  | 'reuniao'
+  | 'proposta'
+  | 'negociacao'
+  | 'ganho'
+  | 'perdido'
+
+/** Etapas em que o lead ainda está em jogo. */
+export const OPEN_LEAD_STAGES: readonly LeadStage[] = [
+  'novo',
+  'contato',
+  'reuniao',
+  'proposta',
+  'negociacao',
+]
+
+/**
+ * Uma pessoa ou empresa que demonstrou interesse.
+ *
+ * Nasce separado de `Client` de propósito. Cliente é quem já comprou — tem
+ * receita, churn e MRR. Lead é quem talvez compre: misturar os dois faria a
+ * carteira de clientes inflar com gente que nunca pagou nada, e todo
+ * indicador de receita por cliente ficaria errado.
+ *
+ * A ponte entre os dois é o `stage: 'ganho'`, que gera a venda e o cliente
+ * de uma vez (`convertLeadToSale` em `@/data/contracts`).
+ */
+export interface Lead extends ScopedEntity {
+  name: string
+  company?: string | null
+  email?: string | null
+  phone?: string | null
+
+  source: LeadSource | null
+  stage: LeadStage
+  /** Responsável pelo acompanhamento — closer ou SDR. */
+  ownerId?: Id | null
+
+  /** Quanto se espera fechar. Alimenta o valor do funil, não a receita. */
+  estimatedValueCents: Cents
+
+  /** Quando o lead entrou. É o marco zero do tempo de fechamento. */
+  enteredAt: IsoDate
+  /** Último toque registrado — o que revela lead esquecido. */
+  lastContactAt?: IsoDate | null
+  /** Próxima ação combinada. É o que a tela cobra quando vence. */
+  nextActionAt?: IsoDate | null
+  nextActionNote?: string | null
+
+  /** Preenchidos ao sair do funil. */
+  closedAt?: IsoDate | null
+  lostReason?: string | null
+
+  /** Vínculos criados quando o lead vira cliente. */
+  clientId?: Id | null
+  saleId?: Id | null
+
+  notes?: string | null
+  createdBy: Id
+}
+
+export type LeadActivityKind =
+  | 'nota'
+  | 'ligacao'
+  | 'mensagem'
+  | 'email'
+  | 'reuniao'
+  | 'proposta'
+  | 'mudanca_etapa'
+
+/**
+ * Um toque no lead.
+ *
+ * O histórico é o que transforma uma lista de nomes em acompanhamento de
+ * verdade: sem ele, ninguém sabe se o lead parado há duas semanas foi
+ * abandonado ou está esperando resposta do jurídico.
+ *
+ * `mudanca_etapa` é gravado pelo próprio sistema quando o card muda de
+ * coluna — assim a linha do tempo não depende de alguém lembrar de anotar.
+ */
+export interface LeadActivity extends ScopedEntity {
+  leadId: Id
+  kind: LeadActivityKind
+  date: IsoDate
+  summary: string
+  /** Preenchidos só em `mudanca_etapa`. */
+  fromStage?: LeadStage | null
+  toStage?: LeadStage | null
+  createdBy: Id
+}
+
+// ---------------------------------------------------------------------------
 // Vendas
 // ---------------------------------------------------------------------------
 
@@ -315,6 +466,13 @@ export interface Sale extends ScopedEntity {
   status: SaleStatus
   /** Data em que o lead entrou — permite medir dias até fechar. */
   leadCreatedAt?: IsoDate | null
+  /**
+   * Lead que originou esta venda, quando ela veio do CRM.
+   *
+   * É o que fecha o ciclo do funil: com ele dá para dizer quantos leads de
+   * uma origem viraram receita, e não só quantos foram marcados como ganhos.
+   */
+  leadId?: Id | null
   notes?: string | null
   createdBy: Id
 }
@@ -498,4 +656,20 @@ export interface Session {
   user: Profile
   workspaceId: Id
   role: Role
+  /**
+   * Situação do vínculo com o workspace ativo.
+   *
+   * A sessão existe mesmo quando não é `active` — é o que permite mostrar a
+   * tela "aguardando liberação" para quem acabou de se cadastrar. Sem isso, a
+   * única alternativa seria negar o login, e a pessoa não teria como saber se
+   * o cadastro chegou.
+   *
+   * Quem lê isto: `RequireSession` em `@/app/routes`. Nenhuma tela de negócio
+   * precisa checar — elas só renderizam para sessão ativa.
+   */
+  status: MemberStatus
+  /** Cargo pedido, quando ainda aguarda decisão. */
+  requestedRole?: Role | null
+  /** Motivo informado na recusa, para a tela de espera poder explicar. */
+  decisionNote?: string | null
 }

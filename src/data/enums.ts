@@ -16,7 +16,10 @@ import type {
   Frequency,
   GoalStatus,
   GoalType,
+  LeadActivityKind,
   LeadSource,
+  LeadStage,
+  MemberStatus,
   PaymentMethod,
   PurchaseStatus,
   Role,
@@ -149,6 +152,45 @@ export const PURCHASE_STATUS_LABEL: Record<PurchaseStatus, string> = {
   approved: 'Aprovada',
   bought: 'Comprada',
   dropped: 'Descartada',
+}
+
+export const LEAD_STAGE_LABEL: Record<LeadStage, string> = {
+  novo: 'Novo',
+  contato: 'Em contato',
+  reuniao: 'Reunião marcada',
+  proposta: 'Proposta enviada',
+  negociacao: 'Negociação',
+  ganho: 'Ganho',
+  perdido: 'Perdido',
+}
+
+/** Explica o que caracteriza cada etapa — vira legenda nas colunas do quadro. */
+export const LEAD_STAGE_DESCRIPTION: Record<LeadStage, string> = {
+  novo: 'Chegou e ainda não foi abordado.',
+  contato: 'Já houve conversa, sem reunião marcada.',
+  reuniao: 'Reunião agendada ou realizada.',
+  proposta: 'Proposta comercial enviada.',
+  negociacao: 'Discutindo valor, escopo ou contrato.',
+  ganho: 'Fechou. Virou venda e cliente.',
+  perdido: 'Não avançou. O motivo fica registrado.',
+}
+
+export const LEAD_ACTIVITY_KIND_LABEL: Record<LeadActivityKind, string> = {
+  nota: 'Anotação',
+  ligacao: 'Ligação',
+  mensagem: 'Mensagem',
+  email: 'E-mail',
+  reuniao: 'Reunião',
+  proposta: 'Proposta',
+  mudanca_etapa: 'Mudança de etapa',
+}
+
+export const MEMBER_STATUS_LABEL: Record<MemberStatus, string> = {
+  pending: 'Aguardando liberação',
+  active: 'Ativo',
+  rejected: 'Recusado',
+  invited: 'Convidado',
+  suspended: 'Suspenso',
 }
 
 export const ROLE_LABEL: Record<Role, string> = {

@@ -14,6 +14,8 @@ import type {
   Goal,
   GoalContribution,
   Id,
+  Lead,
+  LeadActivity,
   MonthlyTarget,
   Profile,
   PurchaseGoal,
@@ -37,6 +39,22 @@ import { useWorkspaceId } from '@/app/session'
 
 /** Coleções que mudam quando uma venda ou uma baixa acontece. */
 const FINANCIAL_COLLECTIONS = ['transactions', 'bills', 'billPayments', 'sales', 'saleCosts']
+
+/**
+ * Converter um lead mexe no funil e no financeiro ao mesmo tempo.
+ *
+ * A lista é maior do que parece necessário de propósito: a conversão cria
+ * cliente, venda e títulos numa tacada só, e esquecer uma coleção aqui faria
+ * a tela de Leads mostrar o lead como ganho enquanto a de Vendas ainda não
+ * conhece a venda — o tipo de inconsistência que destrói a confiança no
+ * número.
+ */
+const LEAD_CONVERSION_COLLECTIONS = [
+  'leads',
+  'leadActivities',
+  'clients',
+  ...FINANCIAL_COLLECTIONS,
+]
 
 function useCollection<T>(
   key: string,
@@ -92,6 +110,19 @@ export const useSales = (query?: ListQuery) => useCollection<Sale>('sales', data
 
 export const useCommercialDays = (query?: ListQuery) =>
   useCollection<CommercialDay>('commercialDays', data.commercialDays, query)
+
+/**
+ * Leads.
+ *
+ * Sem filtro de período por padrão: um lead aberto há três meses continua
+ * sendo trabalho de hoje, e sumir do quadro por causa do seletor de período
+ * seria a forma mais rápida de perder negócio. O recorte por período fica
+ * para as métricas, que o fazem explicitamente com `leadsInPeriod`.
+ */
+export const useLeads = (query?: ListQuery) => useCollection<Lead>('leads', data.leads, query)
+
+export const useLeadActivities = () =>
+  useCollection<LeadActivity>('leadActivities', data.leadActivities)
 
 /** Perfis não são escopados — a lista inteira é pequena e cabe em cache. */
 export function useProfiles() {
@@ -178,6 +209,42 @@ export function useMoveCard() {
   return useMutation({
     mutationFn: (input: Parameters<typeof data.ops.moveCard>[0]) => data.ops.moveCard(input),
     onSuccess: () => invalidate(['cards', ...FINANCIAL_COLLECTIONS]),
+  })
+}
+
+export function useMoveLeadStage() {
+  const invalidate = useInvalidate()
+  return useMutation({
+    mutationFn: (input: Parameters<typeof data.ops.moveLeadStage>[0]) =>
+      data.ops.moveLeadStage(input),
+    onSuccess: () => invalidate(['leads', 'leadActivities']),
+  })
+}
+
+export function useConvertLeadToSale() {
+  const invalidate = useInvalidate()
+  return useMutation({
+    mutationFn: (input: Parameters<typeof data.ops.convertLeadToSale>[0]) =>
+      data.ops.convertLeadToSale(input),
+    onSuccess: () => invalidate(LEAD_CONVERSION_COLLECTIONS),
+  })
+}
+
+export function useApproveMember() {
+  const invalidate = useInvalidate()
+  return useMutation({
+    mutationFn: (input: Parameters<typeof data.ops.approveMember>[0]) =>
+      data.ops.approveMember(input),
+    onSuccess: () => invalidate(['members', 'profiles']),
+  })
+}
+
+export function useRejectMember() {
+  const invalidate = useInvalidate()
+  return useMutation({
+    mutationFn: (input: Parameters<typeof data.ops.rejectMember>[0]) =>
+      data.ops.rejectMember(input),
+    onSuccess: () => invalidate(['members', 'profiles']),
   })
 }
 

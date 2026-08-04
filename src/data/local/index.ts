@@ -3,7 +3,6 @@ import { LocalAuth } from './auth'
 import { db, TABLE_NAMES } from './db'
 import { LocalOperations } from './operations'
 import { createRepository } from './repository'
-import { seedDatabase } from './seed'
 
 /**
  * Provider local — IndexedDB via Dexie.
@@ -31,6 +30,8 @@ export function createLocalProvider(): DataProvider {
     recurringRules: createRepository(db.recurringRules, 'recurringRules'),
 
     clients: createRepository(db.clients, 'clients'),
+    leads: createRepository(db.leads, 'leads'),
+    leadActivities: createRepository(db.leadActivities, 'leadActivities'),
     sales: createRepository(db.sales, 'sales'),
     saleCosts: createRepository(db.saleCosts, 'saleCosts'),
     commercialDays: createRepository(db.commercialDays, 'commercialDays'),
@@ -47,6 +48,14 @@ export function createLocalProvider(): DataProvider {
     activity: createRepository(db.activity, 'activity'),
     customizations: createRepository(db.customizations, 'customizations'),
 
+    /**
+     * Limpeza de bases antigas na abertura.
+     *
+     * Não cria mais nada: os espaços nascem do primeiro cadastro
+     * (`signUp` → `seedWorkspacesFor`). Antes, o app criava um usuário
+     * fantasma na primeira abertura — uma conta sem dono e sem senha, que
+     * deixou de fazer sentido quando o cadastro passou a ser real.
+     */
     async seedIfEmpty() {
       /**
        * Versões anteriores do app abriam com 6 meses de dados fictícios.
@@ -63,21 +72,16 @@ export function createLocalProvider(): DataProvider {
         'bruna@enjoyscale.com.br',
       ]
       const demoProfile = await db.profiles.where('email').anyOf(demoEmails).first()
+      if (!demoProfile) return
 
-      if (demoProfile) {
-        await db.transaction(
-          'rw',
-          TABLE_NAMES.map((name) => db.table(name)),
-          async () => {
-            for (const name of TABLE_NAMES) await db.table(name).clear()
-          },
-        )
-        localStorage.removeItem('enjoy.session')
-      }
-
-      const count = await db.workspaces.count()
-      if (count > 0) return
-      await seedDatabase()
+      await db.transaction(
+        'rw',
+        TABLE_NAMES.map((name) => db.table(name)),
+        async () => {
+          for (const name of TABLE_NAMES) await db.table(name).clear()
+        },
+      )
+      localStorage.removeItem('enjoy.session')
     },
 
     async reset() {

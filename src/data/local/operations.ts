@@ -3,7 +3,22 @@ import { splitCents, sumCents } from '@/lib/money'
 import { persistedStatus } from '@/domain/bills'
 import { occurrencesBetween } from '@/domain/recurrence'
 import type { NewEntity, Operations } from '../contracts'
-import type { Bill, BillPayment, Card, Id, Sale, SaleCost, Transaction } from '../types'
+import type {
+  Bill,
+  BillPayment,
+  Card,
+  Client,
+  Id,
+  Lead,
+  LeadActivity,
+  LeadStage,
+  Profile,
+  Role,
+  Sale,
+  SaleCost,
+  Transaction,
+  WorkspaceMember,
+} from '../types'
 import { db, TABLE_NAMES } from './db'
 import { newId } from './repository'
 
@@ -142,74 +157,87 @@ export class LocalOperations implements Operations {
 
       if (!input.generateReceivables) return { sale, bills: [] }
 
-      const firstDue = input.firstDueDate ?? sale.saleDate
-      const groupId = newId()
-      const drafts: NewEntity<Bill>[] = []
-
-      const base = {
-        workspaceId: sale.workspaceId,
-        direction: 'receivable' as const,
-        partyName: sale.clientName,
-        clientId: sale.clientId,
-        categoryId: null,
-        costCenter: null,
-        status: 'open' as const,
-        saleId: sale.id,
-        installmentGroupId: groupId,
-        createdBy: sale.createdBy,
-        issueDate: sale.saleDate,
-      }
-
-      if (sale.setupCents > 0) {
-        drafts.push({
-          ...base,
-          description: `Implantação — ${sale.clientName}`,
-          amountCents: sale.setupCents,
-          dueDate: firstDue,
-          installmentNumber: null,
-          installmentTotal: null,
-        })
-      }
-
-      if (sale.mrrCents > 0) {
-        const months = Math.max(1, sale.contractMonths ?? 12)
-        for (let i = 0; i < months; i++) {
-          drafts.push({
-            ...base,
-            description: `Mensalidade ${i + 1}/${months} — ${sale.clientName}`,
-            amountCents: sale.mrrCents,
-            dueDate: toIsoDate(addMonths(fromIsoDate(firstDue), i)),
-            installmentNumber: i + 1,
-            installmentTotal: months,
-          })
-        }
-      }
-
-      // Modelos sem recorrência: o valor do contrato menos o que já virou setup.
-      const oneOffTotal = sale.mrrCents > 0 ? 0 : sale.amountCents - sale.setupCents
-      if (oneOffTotal > 0) {
-        const parts = Math.max(1, sale.installments || 1)
-        const amounts = splitCents(oneOffTotal, parts)
-        amounts.forEach((amount, i) => {
-          drafts.push({
-            ...base,
-            description:
-              parts > 1
-                ? `${sale.clientName} — parcela ${i + 1}/${parts}`
-                : `${sale.clientName} — ${sale.model}`,
-            amountCents: amount,
-            dueDate: toIsoDate(addMonths(fromIsoDate(firstDue), i)),
-            installmentNumber: parts > 1 ? i + 1 : null,
-            installmentTotal: parts > 1 ? parts : null,
-          })
-        })
-      }
-
-      const bills = drafts.map((draft) => stampNew<Bill>(draft))
+      const bills = this.buildReceivables(sale, input.firstDueDate)
       if (bills.length) await db.bills.bulkAdd(bills)
 
       return { sale, bills }
     })
+  }
+
+  /**
+   * Desenha os títulos a receber de uma venda.
+   *
+   * Puro e sem I/O de propósito: `createSaleWithReceivables` e
+   * `convertLeadToSale` precisam gerar exatamente os mesmos títulos, e uma
+   * venda vinda do CRM que parcelasse diferente de uma venda digitada à mão
+   * seria um bug impossível de achar — os dois caminhos parecem certos
+   * quando olhados separadamente.
+   */
+  private buildReceivables(sale: Sale, firstDueDate?: IsoDate): Bill[] {
+    const firstDue = firstDueDate ?? sale.saleDate
+    const groupId = newId()
+    const drafts: NewEntity<Bill>[] = []
+
+    const base = {
+      workspaceId: sale.workspaceId,
+      direction: 'receivable' as const,
+      partyName: sale.clientName,
+      clientId: sale.clientId,
+      categoryId: null,
+      costCenter: null,
+      status: 'open' as const,
+      saleId: sale.id,
+      installmentGroupId: groupId,
+      createdBy: sale.createdBy,
+      issueDate: sale.saleDate,
+    }
+
+    if (sale.setupCents > 0) {
+      drafts.push({
+        ...base,
+        description: `Implantação — ${sale.clientName}`,
+        amountCents: sale.setupCents,
+        dueDate: firstDue,
+        installmentNumber: null,
+        installmentTotal: null,
+      })
+    }
+
+    if (sale.mrrCents > 0) {
+      const months = Math.max(1, sale.contractMonths ?? 12)
+      for (let i = 0; i < months; i++) {
+        drafts.push({
+          ...base,
+          description: `Mensalidade ${i + 1}/${months} — ${sale.clientName}`,
+          amountCents: sale.mrrCents,
+          dueDate: toIsoDate(addMonths(fromIsoDate(firstDue), i)),
+          installmentNumber: i + 1,
+          installmentTotal: months,
+        })
+      }
+    }
+
+    // Modelos sem recorrência: o valor do contrato menos o que já virou setup.
+    const oneOffTotal = sale.mrrCents > 0 ? 0 : sale.amountCents - sale.setupCents
+    if (oneOffTotal > 0) {
+      const parts = Math.max(1, sale.installments || 1)
+      const amounts = splitCents(oneOffTotal, parts)
+      amounts.forEach((amount, i) => {
+        drafts.push({
+          ...base,
+          description:
+            parts > 1
+              ? `${sale.clientName} — parcela ${i + 1}/${parts}`
+              : `${sale.clientName} — ${sale.model}`,
+          amountCents: amount,
+          dueDate: toIsoDate(addMonths(fromIsoDate(firstDue), i)),
+          installmentNumber: parts > 1 ? i + 1 : null,
+          installmentTotal: parts > 1 ? parts : null,
+        })
+      })
+    }
+
+    return drafts.map((draft) => stampNew<Bill>(draft))
   }
 
   /**
@@ -317,6 +345,237 @@ export class LocalOperations implements Operations {
     return { card: moved }
   }
 
+  // ---------------------------------------------------------------------------
+  // Fila de aprovação
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Libera o acesso: ativa o vínculo e grava o cargo concedido.
+   *
+   * As quatro escritas — status, cargo, quem decidiu, quando — acontecem
+   * juntas. Um membro ativo sem registro de quem o liberou é pior do que um
+   * pedido que ficou pendente: o primeiro parece legítimo.
+   */
+  async approveMember(input: {
+    memberId: Id
+    grantedRole: Role
+    actorId: Id
+    note?: string
+  }): Promise<WorkspaceMember> {
+    return db.transaction('rw', [db.members], async () => {
+      const member = await db.members.get(input.memberId)
+      if (!member) throw new Error('Pedido não encontrado.')
+      if (member.status === 'active') throw new Error('Este acesso já está liberado.')
+      if (member.userId === input.actorId) throw new Error('Ninguém pode aprovar o próprio cadastro.')
+
+      const updated: WorkspaceMember = {
+        ...member,
+        role: input.grantedRole,
+        status: 'active',
+        decidedBy: input.actorId,
+        decidedAt: nowIso(),
+        decisionNote: input.note ?? null,
+        updatedAt: nowIso(),
+      }
+      await db.members.put(updated)
+      return updated
+    })
+  }
+
+  /**
+   * Recusa o pedido — sem apagar nada.
+   *
+   * A linha continua no banco com quem pediu, qual cargo queria, quem
+   * recusou, quando e por quê. Apagar deixaria a mesma pessoa cadastrando de
+   * novo na semana seguinte sem ninguém lembrar que já havia sido recusada.
+   */
+  async rejectMember(input: {
+    memberId: Id
+    actorId: Id
+    note?: string
+  }): Promise<WorkspaceMember> {
+    return db.transaction('rw', [db.members], async () => {
+      const member = await db.members.get(input.memberId)
+      if (!member) throw new Error('Pedido não encontrado.')
+      if (member.userId === input.actorId) throw new Error('Ninguém pode decidir o próprio cadastro.')
+
+      const updated: WorkspaceMember = {
+        ...member,
+        role: 'viewer',
+        status: 'rejected',
+        decidedBy: input.actorId,
+        decidedAt: nowIso(),
+        decisionNote: input.note ?? null,
+        updatedAt: nowIso(),
+      }
+      await db.members.put(updated)
+      return updated
+    })
+  }
+
+  // ---------------------------------------------------------------------------
+  // CRM de leads
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Move o lead de etapa e registra a mudança na linha do tempo.
+   *
+   * O histórico é escrito pelo sistema, não pela pessoa. É o que permite
+   * distinguir "lead parado há dez dias" de "lead que ninguém anotou" — e
+   * essa distinção é a razão de o CRM existir.
+   *
+   * `closedAt` e `lastContactAt` são derivados do movimento: sair do funil
+   * carimba a data de fechamento, e qualquer avanço conta como toque.
+   */
+  async moveLeadStage(input: {
+    leadId: Id
+    toStage: LeadStage
+    actorId: Id
+    note?: string
+    lostReason?: string
+  }): Promise<Lead> {
+    return db.transaction('rw', [db.leads, db.leadActivities], async () => {
+      const lead = await db.leads.get(input.leadId)
+      if (!lead) throw new Error('Lead não encontrado.')
+      if (lead.stage === input.toStage) return lead
+
+      const isClosing = input.toStage === 'ganho' || input.toStage === 'perdido'
+      const stampDate = toIsoDate(new Date())
+
+      const updated: Lead = {
+        ...lead,
+        stage: input.toStage,
+        lastContactAt: stampDate,
+        closedAt: isClosing ? stampDate : null,
+        lostReason: input.toStage === 'perdido' ? (input.lostReason ?? lead.lostReason ?? null) : null,
+        // Reabrir um lead limpa a próxima ação: a combinada anterior morreu
+        // junto com o fechamento e cobrar por ela seria ruído.
+        nextActionAt: isClosing ? null : lead.nextActionAt,
+        updatedAt: nowIso(),
+      }
+
+      await db.leads.put(updated)
+      await db.leadActivities.add(
+        stampNew<LeadActivity>({
+          workspaceId: lead.workspaceId,
+          leadId: lead.id,
+          kind: 'mudanca_etapa',
+          date: stampDate,
+          summary: input.note ?? `${lead.stage} → ${input.toStage}`,
+          fromStage: lead.stage,
+          toStage: input.toStage,
+          createdBy: input.actorId,
+        }),
+      )
+
+      return updated
+    })
+  }
+
+  /**
+   * Fecha o ciclo: lead ganho vira cliente, venda e títulos a receber.
+   *
+   * É o ponto em que o funil comercial encosta no financeiro. Sem esta
+   * operação o "ganho" do CRM seria só uma etiqueta — e a taxa de conversão
+   * continuaria dependendo de alguém digitar a venda numa segunda tela,
+   * que era exatamente o problema relatado.
+   *
+   * O cliente é reaproveitado quando o lead já aponta para um: um lead que
+   * volta a comprar não pode duplicar a carteira, senão receita por cliente
+   * e churn passam a contar a mesma empresa duas vezes.
+   */
+  async convertLeadToSale(input: {
+    leadId: Id
+    sale: NewEntity<Sale>
+    costs?: Omit<NewEntity<SaleCost>, 'saleId'>
+    generateReceivables: boolean
+    firstDueDate?: IsoDate
+    actorId: Id
+  }): Promise<{ lead: Lead; sale: Sale; client: Client; bills: Bill[] }> {
+    return db.transaction(
+      'rw',
+      [db.leads, db.leadActivities, db.clients, db.sales, db.saleCosts, db.bills],
+      async () => {
+        const lead = await db.leads.get(input.leadId)
+        if (!lead) throw new Error('Lead não encontrado.')
+        if (lead.saleId) throw new Error('Este lead já foi convertido em venda.')
+
+        const stampDate = toIsoDate(new Date())
+
+        let client = lead.clientId ? ((await db.clients.get(lead.clientId)) ?? null) : null
+        if (!client) {
+          client = stampNew<Client>({
+            workspaceId: lead.workspaceId,
+            name: lead.name,
+            company: lead.company ?? null,
+            email: lead.email ?? null,
+            phone: lead.phone ?? null,
+            status: 'active',
+            source: lead.source,
+            startDate: input.sale.saleDate,
+            churnDate: null,
+            ownerId: lead.ownerId ?? null,
+            notes: null,
+          })
+          await db.clients.add(client)
+        } else if (client.status !== 'active') {
+          // Cliente que voltou: reativa e limpa o churn, senão o indicador de
+          // cancelamento continuaria contando alguém que está pagando.
+          client = { ...client, status: 'active', churnDate: null, updatedAt: nowIso() }
+          await db.clients.put(client)
+        }
+
+        const sale = stampNew<Sale>({
+          ...input.sale,
+          clientId: client.id,
+          leadId: lead.id,
+          // A entrada do lead é o marco zero do tempo de fechamento. Vem do
+          // CRM, não do formulário: é o dado que já existe e não erra.
+          leadCreatedAt: input.sale.leadCreatedAt ?? lead.enteredAt,
+          leadSource: input.sale.leadSource ?? lead.source,
+        })
+        await db.sales.add(sale)
+
+        if (input.costs) {
+          await db.saleCosts.add(stampNew<SaleCost>({ ...input.costs, saleId: sale.id }))
+        }
+
+        const bills = input.generateReceivables
+          ? this.buildReceivables(sale, input.firstDueDate)
+          : []
+        if (bills.length) await db.bills.bulkAdd(bills)
+
+        const updatedLead: Lead = {
+          ...lead,
+          stage: 'ganho',
+          clientId: client.id,
+          saleId: sale.id,
+          closedAt: stampDate,
+          lastContactAt: stampDate,
+          nextActionAt: null,
+          lostReason: null,
+          updatedAt: nowIso(),
+        }
+        await db.leads.put(updatedLead)
+
+        await db.leadActivities.add(
+          stampNew<LeadActivity>({
+            workspaceId: lead.workspaceId,
+            leadId: lead.id,
+            kind: 'mudanca_etapa',
+            date: stampDate,
+            summary: 'Lead convertido em venda',
+            fromStage: lead.stage,
+            toStage: 'ganho',
+            createdBy: input.actorId,
+          }),
+        )
+
+        return { lead: updatedLead, sale, client, bills }
+      },
+    )
+  }
+
   /** Transferência entre contas: saída de uma, entrada na outra, mesmo grupo. */
   async createTransfer(input: {
     workspaceId: Id
@@ -362,9 +621,21 @@ export class LocalOperations implements Operations {
     return [out, into]
   }
 
+  /**
+   * Backup do workspace em JSON.
+   *
+   * `passwordHash` é removido dos perfis antes de sair.
+   *
+   * O arquivo circula por e-mail, WhatsApp e pen drive — é um arquivo que
+   * sai do controle de quem o gerou. O hash não é a senha, mas é material
+   * para ataque offline por lista de senhas comuns, e a maioria das pessoas
+   * reusa senha. Quem restaura o backup define a senha de novo no primeiro
+   * acesso (`setInitialPassword`), que é o comportamento correto: restaurar
+   * dados não deveria restaurar credenciais.
+   */
   async exportWorkspace(workspaceId: Id): Promise<Record<string, unknown>> {
     const payload: Record<string, unknown> = {
-      version: 1,
+      version: 2,
       exportedAt: nowIso(),
       workspaceId,
     }
@@ -372,8 +643,17 @@ export class LocalOperations implements Operations {
     for (const name of TABLE_NAMES) {
       const table = db.table(name)
       const rows = await table.toArray()
+
+      if (name === 'profiles') {
+        payload[name] = (rows as Profile[]).map(({ passwordHash: _omit, ...profile }) => ({
+          ...profile,
+          passwordHash: null,
+        }))
+        continue
+      }
+
       payload[name] =
-        name === 'profiles' || name === 'workspaces'
+        name === 'workspaces'
           ? rows
           : rows.filter((row: { workspaceId?: string }) => row.workspaceId === workspaceId)
     }
@@ -381,13 +661,36 @@ export class LocalOperations implements Operations {
     return payload
   }
 
+  /**
+   * Restaura um backup.
+   *
+   * A senha de quem já está nesta base é preservada. O backup vem sem hash
+   * (ver `exportWorkspace`), e sobrescrever cegamente trancaria para fora
+   * quem apenas quis reimportar os próprios dados — o restore viraria uma
+   * armadilha. Perfis que não existem aqui entram sem senha e a definem no
+   * primeiro acesso.
+   */
   async importWorkspace(payload: Record<string, unknown>): Promise<void> {
+    const currentHashes = new Map(
+      (await db.profiles.toArray()).map((profile) => [profile.id, profile.passwordHash ?? null]),
+    )
+
     await db.transaction('rw', TABLE_NAMES.map((name) => db.table(name)), async () => {
       for (const name of TABLE_NAMES) {
         const rows = payload[name]
-        if (Array.isArray(rows) && rows.length) {
-          await db.table(name).bulkPut(rows)
+        if (!Array.isArray(rows) || !rows.length) continue
+
+        if (name === 'profiles') {
+          await db.profiles.bulkPut(
+            (rows as Profile[]).map((profile) => ({
+              ...profile,
+              passwordHash: currentHashes.get(profile.id) ?? profile.passwordHash ?? null,
+            })),
+          )
+          continue
         }
+
+        await db.table(name).bulkPut(rows)
       }
     })
   }

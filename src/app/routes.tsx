@@ -2,6 +2,7 @@ import { Suspense, lazy, type ReactNode } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
 import { LoginPage } from '@/features/auth/LoginPage'
+import { PendingAccessPage } from '@/features/auth/PendingAccessPage'
 import { AppShell } from './AppShell'
 import { useSession } from './session'
 
@@ -39,6 +40,9 @@ const SalesPage = lazy(() =>
 const ClientsPage = lazy(() =>
   import('@/features/clients/ClientsPage').then((m) => ({ default: m.ClientsPage })),
 )
+const LeadsPage = lazy(() =>
+  import('@/features/leads/LeadsPage').then((m) => ({ default: m.LeadsPage })),
+)
 const CommercialPage = lazy(() =>
   import('@/features/commercial/CommercialPage').then((m) => ({ default: m.CommercialPage })),
 )
@@ -72,8 +76,18 @@ function Loading() {
   )
 }
 
+/**
+ * Portão único do app.
+ *
+ * Três saídas, e a do meio é a que importa: quem tem sessão mas ainda não foi
+ * liberado **não** volta para o login. Voltar faria a pessoa achar que o
+ * cadastro falhou e tentar de novo, enchendo a fila de pedidos repetidos.
+ *
+ * A checagem mora aqui, e não em cada tela, para que não exista tela nova que
+ * esqueça de fazê-la.
+ */
 function RequireSession({ children }: { children: ReactNode }) {
-  const { session, loading } = useSession()
+  const { session, loading, isActive } = useSession()
 
   if (loading) {
     return (
@@ -84,6 +98,7 @@ function RequireSession({ children }: { children: ReactNode }) {
   }
 
   if (!session) return <Navigate to="/login" replace />
+  if (!isActive) return <PendingAccessPage />
   return <>{children}</>
 }
 
@@ -119,6 +134,7 @@ export function AppRoutes() {
                 <Route path="a-pagar" element={<BillsPage direction="payable" />} />
                 <Route path="recorrentes" element={<RecurringPage />} />
                 <Route path="vendas" element={<SalesPage />} />
+                <Route path="leads" element={<LeadsPage />} />
                 <Route path="clientes" element={<ClientsPage />} />
                 <Route path="comercial" element={<CommercialPage />} />
                 <Route path="performance" element={<PerformancePage />} />

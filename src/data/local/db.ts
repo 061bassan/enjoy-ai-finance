@@ -13,6 +13,8 @@ import type {
   CommercialDay,
   Goal,
   GoalContribution,
+  Lead,
+  LeadActivity,
   MonthlyTarget,
   Profile,
   PurchaseGoal,
@@ -47,6 +49,8 @@ export class EnjoyDatabase extends Dexie {
   recurringRules!: EntityTable<RecurringRule, 'id'>
 
   clients!: EntityTable<Client, 'id'>
+  leads!: EntityTable<Lead, 'id'>
+  leadActivities!: EntityTable<LeadActivity, 'id'>
   sales!: EntityTable<Sale, 'id'>
   saleCosts!: EntityTable<SaleCost, 'id'>
   commercialDays!: EntityTable<CommercialDay, 'id'>
@@ -108,6 +112,22 @@ export class EnjoyDatabase extends Dexie {
     this.version(2).stores({
       customizations: 'id, workspaceId',
     })
+
+    /**
+     * v3 — CRM de leads e fila de aprovação.
+     *
+     * `members` é redeclarada só para ganhar o índice por `status`: a fila de
+     * aprovação consulta "quem está pendente neste workspace" a cada abertura
+     * do painel, e sem índice isso varre a tabela inteira. Redeclarar não
+     * apaga nada — o Dexie preserva as linhas e só reconstrói os índices.
+     */
+    this.version(3).stores({
+      leads:
+        'id, workspaceId, stage, ownerId, source, enteredAt, clientId, saleId, nextActionAt, [workspaceId+stage], [workspaceId+enteredAt], [workspaceId+ownerId]',
+      leadActivities: 'id, workspaceId, leadId, date, kind, [workspaceId+date], [leadId+date]',
+      members:
+        'id, workspaceId, userId, [workspaceId+userId], role, status, [workspaceId+status]',
+    })
   }
 }
 
@@ -125,6 +145,8 @@ export const TABLE_NAMES = [
   'billPayments',
   'recurringRules',
   'clients',
+  'leads',
+  'leadActivities',
   'sales',
   'saleCosts',
   'commercialDays',
@@ -148,6 +170,10 @@ export const DATE_FIELD: Partial<Record<TableName, string>> = {
   billPayments: 'date',
   sales: 'saleDate',
   commercialDays: 'date',
+  // Leads são filtrados pela data de ENTRADA: a pergunta do funil é sempre
+  // "de tudo que chegou no período, quanto virou venda".
+  leads: 'enteredAt',
+  leadActivities: 'date',
   goalContributions: 'date',
   monthlyTargets: 'month',
   activity: 'createdAt',

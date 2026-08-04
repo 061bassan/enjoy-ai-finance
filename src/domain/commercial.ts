@@ -166,14 +166,48 @@ export interface FunnelStage {
   /** Conversão em relação ao topo do funil. */
   conversionFromTop: number | null
   costPerUnitCents: Cents | null
+  /**
+   * `true` quando a contagem veio de um fato registrado (venda fechada, lead
+   * cadastrado) e não de um número digitado no diário. A tela marca a
+   * diferença: um número que o sistema apurou sozinho merece confiança
+   * diferente de um que alguém somou de cabeça no fim do dia.
+   */
+  measured?: boolean
 }
 
-/** Funil comercial, do lead ao contrato assinado. */
-export function buildFunnel(totals: CommercialTotals): FunnelStage[] {
-  const investment = totals.totalInvestmentCents
+export interface FunnelOptions {
+  /**
+   * Leads do CRM no período. Quando informado, substitui o topo do funil —
+   * lead com nome e telefone é um dado melhor que um total digitado.
+   */
+  leadCount?: number
+  /**
+   * Vendas efetivamente registradas no período.
+   *
+   * Fecha o funil com o fato que interessa. Antes, a última etapa era
+   * "contratos assinados" digitado no diário: o funil tinha o lugar da
+   * conversão final, mas nada nele conhecia a tela de Vendas, então o número
+   * dependia de alguém lançar a mesma informação duas vezes — e divergia
+   * sempre que essa pessoa esquecia.
+   */
+  salesCount?: number
+}
 
-  const stages: { key: string; label: string; count: number }[] = [
-    { key: 'leads', label: 'Leads', count: totals.leads },
+/** Funil comercial, do lead à venda fechada. */
+export function buildFunnel(
+  totals: CommercialTotals,
+  options: FunnelOptions = {},
+): FunnelStage[] {
+  const investment = totals.totalInvestmentCents
+  const hasCrmLeads = options.leadCount != null && options.leadCount > 0
+
+  const stages: { key: string; label: string; count: number; measured?: boolean }[] = [
+    {
+      key: 'leads',
+      label: 'Leads',
+      count: hasCrmLeads ? (options.leadCount as number) : totals.leads,
+      measured: hasCrmLeads,
+    },
     { key: 'calls', label: 'Calls', count: totals.calls },
     { key: 'meetings', label: 'Reuniões', count: totals.meetings },
     { key: 'attended', label: 'Compareceram', count: totals.meetings - totals.noShows },
@@ -181,6 +215,15 @@ export function buildFunnel(totals: CommercialTotals): FunnelStage[] {
     { key: 'approved', label: 'Aprovadas', count: totals.proposalsApproved },
     { key: 'signed', label: 'Contratos assinados', count: totals.contractsSigned },
   ]
+
+  if (options.salesCount != null) {
+    stages.push({
+      key: 'sales',
+      label: 'Vendas registradas',
+      count: options.salesCount,
+      measured: true,
+    })
+  }
 
   const top = stages[0]?.count ?? 0
 

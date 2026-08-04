@@ -36,6 +36,41 @@ export interface CustomizableScreen {
 
 export const SCREENS: CustomizableScreen[] = [
   {
+    id: 'leads',
+    label: 'Leads',
+    sections: [
+      {
+        id: 'kpis',
+        label: 'Indicadores',
+        description: 'Cartões no topo da tela.',
+        items: [
+          { id: 'total', label: 'Leads no período' },
+          {
+            id: 'conversion',
+            label: 'Conversão em venda',
+            locked: true,
+            hint: 'É a pergunta que a tela existe para responder: de tudo que chegou, quanto virou venda.',
+          },
+          { id: 'winRate', label: 'Taxa de ganho' },
+          { id: 'pipeline', label: 'Em negociação' },
+          { id: 'won', label: 'Ganhos no período' },
+          { id: 'daysToWin', label: 'Tempo até fechar' },
+        ],
+      },
+      {
+        id: 'panels',
+        label: 'Painéis',
+        items: [
+          {
+            id: 'attention',
+            label: 'Leads que precisam de atenção',
+            hint: 'Some da tela, mas os leads continuam atrasados. Esconder aqui não resolve o atraso.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     id: 'sales',
     label: 'Vendas',
     sections: [

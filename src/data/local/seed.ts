@@ -7,11 +7,10 @@ import type {
   CategoryKind,
   CostCenter,
   Id,
-  Profile,
   Workspace,
   WorkspaceMember,
 } from '../types'
-import { DEFAULT_COMPANY, DEFAULT_USER } from '../defaults'
+import { DEFAULT_COMPANY } from '../defaults'
 import { db } from './db'
 import { newId } from './repository'
 
@@ -23,9 +22,13 @@ import { newId } from './repository'
  * é um número que a Enjoy realmente lançou.
  *
  * O que este arquivo cria é só o esqueleto sem o qual não dá para usar o
- * produto: o usuário, os dois workspaces, uma conta em cada um, o plano de
- * categorias e um quadro kanban com as colunas certas. Tudo isso é editável
- * em Configurações.
+ * produto: os dois espaços, uma conta em cada um, o plano de categorias e um
+ * quadro kanban com as colunas certas. Tudo isso é editável em Configurações.
+ *
+ * O **usuário não nasce aqui** — nasce do cadastro (`signUp` em `./auth`).
+ * Enquanto ninguém se cadastra, o banco fica vazio de propósito: um perfil
+ * fantasma criado pelo sistema seria uma conta sem dono, sem senha e sem
+ * responsável, e alguém acabaria usando como se fosse real.
  */
 
 function stamp<T>(data: Omit<T, 'id' | 'createdAt' | 'updatedAt'>, id: Id = newId()): T {
@@ -66,19 +69,19 @@ const PERSONAL_CATEGORIES: { name: string; kind: CategoryKind }[] = [
   { name: 'Outros', kind: 'expense' },
 ]
 
-export async function seedDatabase(): Promise<void> {
-  const user = stamp<Profile>({
-    name: DEFAULT_USER.name,
-    email: DEFAULT_USER.email,
-    jobTitle: null,
-    avatarUrl: null,
-  })
-
+/**
+ * Cria os espaços da primeira pessoa que se cadastra.
+ *
+ * Chamado por `signUp` quando ainda não existe nenhum espaço de empresa —
+ * quem instala é quem manda, e por isso o vínculo já nasce `active` como
+ * dono, sem passar pela fila de aprovação.
+ */
+export async function seedWorkspacesFor(ownerId: Id): Promise<void> {
   const company = stamp<Workspace>({
     name: DEFAULT_COMPANY.name,
     shortName: DEFAULT_COMPANY.shortName,
     type: 'team',
-    ownerId: user.id,
+    ownerId,
     currency: 'BRL',
   })
 
@@ -86,17 +89,21 @@ export async function seedDatabase(): Promise<void> {
     name: 'Pessoal',
     shortName: 'Pessoal',
     type: 'personal',
-    ownerId: user.id,
+    ownerId,
     currency: 'BRL',
   })
 
   const members = [company, personal].map((workspace) =>
     stamp<WorkspaceMember>({
       workspaceId: workspace.id,
-      userId: user.id,
+      userId: ownerId,
       role: 'owner',
       status: 'active',
       invitedBy: null,
+      requestedRole: 'owner',
+      decidedBy: ownerId,
+      decidedAt: nowIso(),
+      decisionNote: null,
     }),
   )
 
@@ -182,9 +189,8 @@ export async function seedDatabase(): Promise<void> {
 
   await db.transaction(
     'rw',
-    [db.profiles, db.workspaces, db.members, db.accounts, db.categories, db.boards, db.boardColumns],
+    [db.workspaces, db.members, db.accounts, db.categories, db.boards, db.boardColumns],
     async () => {
-      await db.profiles.add(user)
       await db.workspaces.bulkAdd([company, personal])
       await db.members.bulkAdd(members)
       await db.accounts.bulkAdd(accounts)

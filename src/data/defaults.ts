@@ -6,12 +6,6 @@
  * ser transparente.
  */
 
-/** Usuário único do MVP. O cargo é escolhido na tela de entrada. */
-export const DEFAULT_USER = {
-  name: 'Administrador',
-  email: 'admin@enjoyscale.com.br',
-} as const
-
 /** Nome da empresa exibido no seletor de espaços. */
 export const DEFAULT_COMPANY = {
   name: 'Enjoy Scale',

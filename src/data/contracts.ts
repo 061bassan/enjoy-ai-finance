@@ -24,6 +24,9 @@ import type {
   Goal,
   GoalContribution,
   Id,
+  Lead,
+  LeadActivity,
+  LeadStage,
   MonthlyTarget,
   Profile,
   PurchaseGoal,
@@ -68,22 +71,57 @@ export interface Repository<T> {
   findBy(workspaceId: Id, where: Partial<Record<keyof T, unknown>>): Promise<T[]>
 }
 
-/** Autenticação. No modo local é uma sessão fake; no Supabase, o Auth real. */
+/** Dados coletados no cadastro. Validados em `@/lib/validators` antes de chegar aqui. */
+export interface SignUpInput {
+  name: string
+  email: string
+  password: string
+  cpf: string
+  birthDate: string
+  phone: string
+  /** Cargo que a pessoa está pedindo. Só vira efetivo depois da aprovação. */
+  requestedRole: Role
+}
+
+/** Autenticação. No modo local, PBKDF2 sobre o IndexedDB; no Supabase, o Auth real. */
 export interface AuthGateway {
   getSession(): Promise<Session | null>
   signIn(email: string, password: string): Promise<Session>
+
   /**
-   * Entra assumindo um cargo específico.
+   * Cria a conta e entra já com a sessão pendente.
    *
-   * Existe porque o MVP tem um único usuário e precisamos conseguir ver o
-   * produto pelos olhos de cada cargo antes de convidar a equipe de verdade.
-   * Não é um truque de sessão: o cargo é gravado na tabela de membros, então
-   * o comportamento é idêntico ao de alguém que foi convidado com esse cargo.
+   * Entrar antes da aprovação é intencional: a pessoa precisa ver que o
+   * pedido chegou. A alternativa — recusar o login até alguém aprovar — deixa
+   * quem se cadastrou sem nenhum retorno, e ela tenta de novo achando que
+   * deu erro.
    *
-   * Quando houver equipe real, esta função sai e o cargo passa a vir só do
-   * convite — que é como o Supabase vai tratar na Fase 9.
+   * O primeiro cadastro de um workspace vazio entra aprovado como dono (ver
+   * `isFirstMember` em `@/domain/membership`): sem isso não existiria ninguém
+   * para aprovar o primeiro pedido.
    */
-  signInAs(email: string, role: Role): Promise<Session>
+  signUp(input: SignUpInput): Promise<Session>
+
+  /**
+   * Define a senha de um perfil que ainda não tem uma.
+   *
+   * Existe para bases criadas antes do login com senha: os perfis daquela
+   * fase não têm `passwordHash`, e trancá-los para fora apagaria dados reais
+   * já lançados. A tela de entrada detecta o caso e pede a senha nova.
+   */
+  setInitialPassword(email: string, password: string): Promise<Session>
+
+  /**
+   * E-mails de contas sem senha definida.
+   *
+   * Opcional porque só o provider local tem esse problema: no Supabase toda
+   * conta nasce do Auth e sempre tem credencial. Existe para a tela de
+   * entrada conseguir dizer **qual** conta precisa de senha — quem abriu o app
+   * há meses não lembra o e-mail que o sistema gerou sozinho, e sem esta
+   * lista ficaria trancado para fora dos próprios dados.
+   */
+  listAccountsWithoutPassword?(): Promise<string[]>
+
   signOut(): Promise<void>
   /** Troca o workspace ativo da sessão, revalidando o papel do usuário. */
   switchWorkspace(workspaceId: Id): Promise<Session>
@@ -151,6 +189,59 @@ export interface Operations {
     actorId: Id
   }): Promise<Transaction[]>
 
+  /**
+   * Libera um pedido de acesso: grava o cargo concedido e ativa o vínculo.
+   *
+   * Atômica porque decidir é uma coisa só — status, cargo, quem decidiu e
+   * quando precisam mudar juntos, senão sobra um membro ativo sem registro de
+   * quem o liberou.
+   */
+  approveMember(input: {
+    memberId: Id
+    grantedRole: Role
+    actorId: Id
+    note?: string
+  }): Promise<WorkspaceMember>
+
+  /**
+   * Recusa o pedido. **Não apaga a linha**: o pedido, o cargo pretendido, a
+   * decisão e o motivo continuam no banco, que foi o pedido explícito —
+   * "independente de aceitar ou recusar as informações devem ser armazenadas".
+   */
+  rejectMember(input: { memberId: Id; actorId: Id; note?: string }): Promise<WorkspaceMember>
+
+  /**
+   * Move o lead de etapa e registra a mudança na linha do tempo.
+   *
+   * O histórico é gravado pelo sistema justamente para não depender de
+   * alguém lembrar de anotar — sem isso, "lead parado há 10 dias" seria
+   * indistinguível de "lead que ninguém registrou".
+   */
+  moveLeadStage(input: {
+    leadId: Id
+    toStage: LeadStage
+    actorId: Id
+    note?: string
+    lostReason?: string
+  }): Promise<Lead>
+
+  /**
+   * Converte um lead ganho em venda.
+   *
+   * Cria (ou reaproveita) o cliente, cria a venda com os títulos a receber e
+   * amarra tudo de volta ao lead. É o ponto em que o funil comercial vira
+   * dinheiro no financeiro — e é o que faz a taxa de conversão do funil ser
+   * apurada em vez de digitada.
+   */
+  convertLeadToSale(input: {
+    leadId: Id
+    sale: NewEntity<Sale>
+    costs?: Omit<NewEntity<SaleCost>, 'saleId'>
+    generateReceivables: boolean
+    firstDueDate?: string
+    actorId: Id
+  }): Promise<{ lead: Lead; sale: Sale; client: Client; bills: Bill[] }>
+
   /** Exporta todo o workspace como JSON — backup e futura migração. */
   exportWorkspace(workspaceId: Id): Promise<Record<string, unknown>>
   importWorkspace(payload: Record<string, unknown>): Promise<void>
@@ -175,6 +266,8 @@ export interface DataProvider {
   recurringRules: Repository<RecurringRule>
 
   clients: Repository<Client>
+  leads: Repository<Lead>
+  leadActivities: Repository<LeadActivity>
   sales: Repository<Sale>
   saleCosts: Repository<SaleCost>
   commercialDays: Repository<CommercialDay>

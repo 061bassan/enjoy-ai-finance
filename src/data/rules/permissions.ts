@@ -21,6 +21,8 @@ export type Permission =
   | 'view:commercial'
   | 'view:executive'
   | 'view:members'
+  | 'view:leads:all'
+  | 'view:leads:own'
   // Escrita — financeiro
   | 'manage:transactions'
   | 'manage:bills'
@@ -33,6 +35,8 @@ export type Permission =
   | 'manage:sale_costs'
   | 'manage:commercial'
   | 'manage:clients'
+  | 'manage:leads:all'
+  | 'manage:leads:own'
   // Planejamento
   | 'manage:goals'
   | 'manage:targets'
@@ -44,7 +48,12 @@ export type Permission =
   | 'delete:workspace'
   | 'export:reports'
 
-const VIEWER: Permission[] = ['view:financials', 'view:sales:all', 'view:commercial']
+const VIEWER: Permission[] = [
+  'view:financials',
+  'view:sales:all',
+  'view:commercial',
+  'view:leads:all',
+]
 
 /**
  * `sales` é o papel mais restrito com escrita: enxerga e edita apenas o que
@@ -54,7 +63,9 @@ const VIEWER: Permission[] = ['view:financials', 'view:sales:all', 'view:commerc
 const SALES: Permission[] = [
   'view:sales:own',
   'view:commercial',
+  'view:leads:own',
   'manage:sales:own',
+  'manage:leads:own',
   'manage:commercial',
   'manage:clients',
   'manage:kanban',
@@ -73,6 +84,7 @@ const FINANCE: Permission[] = [
   'manage:sale_costs',
   'manage:commercial',
   'manage:clients',
+  'manage:leads:all',
   'manage:goals',
   'manage:targets',
   'manage:purchases',
@@ -102,6 +114,17 @@ export function can(role: Role | undefined, permission: Permission): boolean {
 export function canManageSale(role: Role | undefined, isOwnSale: boolean): boolean {
   if (can(role, 'manage:sales:all')) return true
   return isOwnSale && can(role, 'manage:sales:own')
+}
+
+/** Mesma regra para leads: closer/SDR mexe no que é seu. */
+export function canManageLead(role: Role | undefined, isOwnLead: boolean): boolean {
+  if (can(role, 'manage:leads:all')) return true
+  return isOwnLead && can(role, 'manage:leads:own')
+}
+
+/** Enxerga o funil inteiro, ou só a própria carteira? */
+export function canSeeAllLeads(role: Role | undefined): boolean {
+  return can(role, 'view:leads:all')
 }
 
 /** Papéis que um usuário com este papel pode atribuir a outra pessoa. */

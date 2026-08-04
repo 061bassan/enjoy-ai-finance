@@ -8,7 +8,7 @@ import {
   Menu,
   Moon,
   Sun,
-  UserCog,
+  UserRoundCheck,
   X,
 } from 'lucide-react'
 import { cn } from '@/lib/cn'
@@ -24,6 +24,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
 import { ROLE_LABEL } from '@/data/enums'
+import { pendingRequests } from '@/domain/membership'
+import { useMembers } from '@/hooks/data'
 import { useCustomization } from '@/customization/context'
 import { NAVIGATION } from './navigation'
 import { PeriodPicker } from './PeriodPicker'
@@ -218,11 +220,12 @@ function UserMenu() {
           Tema {theme === 'dark' ? 'claro' : 'escuro'}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        {/* Sair leva de volta à escolha de cargo, que é o caminho para trocar. */}
-        <DropdownMenuItem onSelect={() => void signOut()}>
-          <UserCog />
-          Trocar de cargo
-        </DropdownMenuItem>
+        {/*
+          "Trocar de cargo" saiu daqui junto com o login por seleção de papel.
+          O cargo agora vem da aprovação de um sócio e só muda em
+          Configurações → Equipe — deixar um atalho que sugere trocar sozinho
+          contradiria a fila de aprovação que acabamos de criar.
+        */}
         <DropdownMenuItem onSelect={() => void signOut()}>
           <LogOut />
           Sair
@@ -232,9 +235,64 @@ function UserMenu() {
   )
 }
 
+/**
+ * Nome da tela aberta.
+ *
+ * Sai da mesma lista que monta o menu, então nunca diverge dele. O header
+ * ficava vazio à esquerda: no celular, com a gaveta fechada, não havia nada
+ * dizendo em que tela a pessoa estava.
+ */
+function useCurrentPageLabel(): string | null {
+  const { pathname } = useLocation()
+
+  return React.useMemo(() => {
+    const items = NAVIGATION.flatMap((group) => group.items)
+    const exact = items.find((item) => item.to === pathname)
+    if (exact) return exact.label
+
+    // Rotas mais específicas primeiro, senão "/" casaria com tudo.
+    const prefix = [...items]
+      .filter((item) => item.to !== '/')
+      .sort((a, b) => b.to.length - a.to.length)
+      .find((item) => pathname.startsWith(item.to))
+
+    return prefix?.label ?? null
+  }, [pathname])
+}
+
+/**
+ * Aviso de acessos aguardando liberação.
+ *
+ * Um pedido de acesso que ninguém vê é um pedido que nunca é decidido — e a
+ * pessoa do outro lado fica olhando a tela de espera sem saber que não há
+ * nada acontecendo. O aviso só aparece para quem pode decidir.
+ */
+function PendingAccessAlert() {
+  const { allow } = useSession()
+  const { data: members = [] } = useMembers()
+
+  const count = React.useMemo(() => pendingRequests(members).length, [members])
+
+  if (!allow('manage:members') || count === 0) return null
+
+  return (
+    <NavLink
+      to="/configuracoes"
+      className="flex items-center gap-1.5 rounded-full border border-border bg-surface-1 px-2.5 py-1 text-xs transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <UserRoundCheck className="h-3.5 w-3.5" />
+      <span className="hidden sm:inline">
+        {count === 1 ? '1 acesso aguardando' : `${count} acessos aguardando`}
+      </span>
+      <span className="sm:hidden">{count}</span>
+    </NavLink>
+  )
+}
+
 export function AppShell() {
   const [mobileOpen, setMobileOpen] = React.useState(false)
   const location = useLocation()
+  const pageLabel = useCurrentPageLabel()
 
   // Fecha a gaveta ao navegar no mobile.
   React.useEffect(() => {
@@ -280,8 +338,15 @@ export function AppShell() {
             {mobileOpen ? <X /> : <Menu />}
           </Button>
 
-          <div className="min-w-0 flex-1" />
+          <div className="min-w-0 flex-1">
+            {pageLabel && (
+              <span className="truncate text-sm font-medium text-muted-foreground lg:hidden">
+                {pageLabel}
+              </span>
+            )}
+          </div>
 
+          <PendingAccessAlert />
           <PeriodPicker />
           <UserMenu />
         </header>
