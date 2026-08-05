@@ -24,15 +24,9 @@ import {
   variation,
 } from '@/domain/finance'
 import { monthlyCashflow, projectionMonths, workingCapital } from '@/domain/cashflow'
-import {
-  activeMrr,
-  arr,
-  churnRate,
-  lifetimeValue,
-  ltvToCac,
-  summarizeSales,
-} from '@/domain/sales'
+import { activeMrr, arr, churnRate, lifetimeValue, ltvToCac, summarizeSales } from '@/domain/sales'
 import { commercialKpis, daysInPeriod, totalizeCommercial } from '@/domain/commercial'
+import { leadsInPeriod } from '@/domain/leads'
 import { totalMonthlyCost } from '@/domain/recurrence'
 import { toBillViews, totalOutstanding, totalOverdue } from '@/domain/bills'
 import { usePeriod } from '@/app/period'
@@ -47,6 +41,7 @@ import {
   useBills,
   useClients,
   useCommercialDays,
+  useLeads,
   useRecurringRules,
   useSales,
   useTransactions,
@@ -72,6 +67,7 @@ export function ExecutivePage() {
   const { data: bills = [] } = useBills()
   const { data: payments = [] } = useBillPayments()
   const { data: days = [] } = useCommercialDays()
+  const { data: leads = [] } = useLeads()
   const { data: rules = [] } = useRecurringRules()
 
   const metrics = React.useMemo(() => {
@@ -89,7 +85,11 @@ export function ExecutivePage() {
     const previousSummary = summarizeSales(previousSales)
 
     const commercial = totalizeCommercial(daysInPeriod(days, range))
-    const kpis = commercialKpis(commercial, periodSales)
+    // O win rate é vendas ÷ leads: o CRM é o denominador preferido, e sem ele
+    // o cálculo cai no total digitado no diário comercial.
+    const kpis = commercialKpis(commercial, periodSales, {
+      leadCount: leadsInPeriod(leads, range).length,
+    })
 
     const mrr = activeMrr(sales, clients)
     const cash = totalCash(accounts, transactions)
@@ -137,6 +137,8 @@ export function ExecutivePage() {
       cac,
       ltvCac: ltvToCac(ltv, cac),
       winRate: kpis.winRate,
+      winRateSales: kpis.saleCount,
+      winRateLeads: kpis.leadCount,
       roi: kpis.roi,
       burn,
       runway: runwayMonths(cash, burn),
@@ -148,7 +150,19 @@ export function ExecutivePage() {
       flow,
       yearSeries,
     }
-  }, [transactions, accounts, sales, clients, bills, payments, days, rules, range, comparisonRange])
+  }, [
+    transactions,
+    accounts,
+    sales,
+    clients,
+    bills,
+    payments,
+    days,
+    leads,
+    rules,
+    range,
+    comparisonRange,
+  ])
 
   // A rota é escondida na navegação, mas alguém pode chegar pela URL.
   if (!allow('view:executive')) return <Navigate to="/" replace />
@@ -165,7 +179,9 @@ export function ExecutivePage() {
       <Card
         className={
           'mb-4 p-4 ' +
-          (health.issues.length ? 'border-negative/30 bg-negative/5' : 'border-positive/30 bg-positive/5')
+          (health.issues.length
+            ? 'border-negative/30 bg-negative/5'
+            : 'border-positive/30 bg-positive/5')
         }
       >
         <div className="flex gap-3">
@@ -237,6 +253,10 @@ export function ExecutivePage() {
         <KpiCard
           label="Win rate"
           value={metrics.winRate != null ? formatPercent(metrics.winRate) : '—'}
+          secondary={`${formatNumber(metrics.winRateSales)} vendas ÷ ${formatNumber(
+            metrics.winRateLeads,
+          )} leads`}
+          hint="Vendas registradas no período divididas pelos leads que entraram."
         />
         <KpiCard label="Ticket médio" value={formatMoney(metrics.summary.averageTicketCents)} />
         <KpiCard
@@ -259,10 +279,7 @@ export function ExecutivePage() {
           value={formatMoney(metrics.forecast)}
           secondary="títulos futuros em aberto"
         />
-        <KpiCard
-          label="Capital de giro"
-          value={formatMoney(metrics.workingCapitalCents)}
-        />
+        <KpiCard label="Capital de giro" value={formatMoney(metrics.workingCapitalCents)} />
       </KpiGrid>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -381,9 +398,7 @@ function assessHealth(metrics: {
     )
   }
   if (metrics.runway != null && metrics.runway < 6) {
-    issues.push(
-      `Runway de ${formatNumber(metrics.runway)} meses — abaixo do colchão mínimo de 6.`,
-    )
+    issues.push(`Runway de ${formatNumber(metrics.runway)} meses — abaixo do colchão mínimo de 6.`)
   }
   if (metrics.churn != null && metrics.churn > 0.05) {
     issues.push(`Churn em ${formatPercent(metrics.churn)} no período.`)

@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { toast } from 'sonner'
-import { Download, Plus, Trash2, Upload, Wallet } from 'lucide-react'
+import { Download, MoreHorizontal, Pencil, Plus, Trash2, Upload, Wallet } from 'lucide-react'
 import { data } from '@/data'
 import { formatMoney } from '@/lib/money'
 import {
@@ -43,6 +43,12 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import {
   useAccounts,
   useCategories,
@@ -134,11 +140,39 @@ function AccountsTab() {
   const { data: transactions = [] } = useTransactions()
   const create = useCreate('accounts', data.accounts)
   const update = useUpdate('accounts', data.accounts)
+  const removeAccount = useRemove('accounts', data.accounts)
 
   const [name, setName] = React.useState('')
   const [type, setType] = React.useState<AccountType>('checking')
   const [institution, setInstitution] = React.useState('')
   const [openingBalanceCents, setOpeningBalanceCents] = React.useState(0)
+  const [editing, setEditing] = React.useState<Account | null>(null)
+  const [deleting, setDeleting] = React.useState<Account | null>(null)
+
+  /** Quantos lançamentos dependem de cada conta — trava a exclusão. */
+  const movementsByAccount = React.useMemo(() => {
+    const map = new Map<string, number>()
+    for (const transaction of transactions) {
+      map.set(transaction.accountId, (map.get(transaction.accountId) ?? 0) + 1)
+    }
+    return map
+  }, [transactions])
+
+  function resetForm() {
+    setEditing(null)
+    setName('')
+    setType('checking')
+    setInstitution('')
+    setOpeningBalanceCents(0)
+  }
+
+  function startEdit(account: Account) {
+    setEditing(account)
+    setName(account.name)
+    setType(account.type)
+    setInstitution(account.institution ?? '')
+    setOpeningBalanceCents(account.openingBalanceCents)
+  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
@@ -147,17 +181,27 @@ function AccountsTab() {
       toast.error('Informe o nome da conta.')
       return
     }
-    await create.mutateAsync({
-      workspaceId: session.workspaceId,
+
+    const fields = {
       name: name.trim(),
       type,
       institution: institution.trim() || null,
       openingBalanceCents,
+    }
+
+    if (editing) {
+      await update.mutateAsync({ id: editing.id, patch: fields })
+      toast.success('Conta atualizada.')
+      resetForm()
+      return
+    }
+
+    await create.mutateAsync({
+      workspaceId: session.workspaceId,
+      ...fields,
       archived: false,
     })
-    setName('')
-    setInstitution('')
-    setOpeningBalanceCents(0)
+    resetForm()
     toast.success('Conta criada.')
   }
 
@@ -180,6 +224,7 @@ function AccountsTab() {
                 <TableHead className="hidden sm:table-cell">Tipo</TableHead>
                 <TableHead data-numeric>Saldo</TableHead>
                 <TableHead className="w-24">Ativa</TableHead>
+                {canManage && <TableHead className="w-10" />}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -206,6 +251,29 @@ function AccountsTab() {
                       onCheckedChange={() => void toggleArchived(account)}
                     />
                   </TableCell>
+                  {canManage && (
+                    <TableCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={`Ações da conta ${account.name}`}
+                          >
+                            <MoreHorizontal />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onSelect={() => startEdit(account)}>
+                            <Pencil /> Editar
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => setDeleting(account)}>
+                            <Trash2 /> Excluir
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>
@@ -215,7 +283,9 @@ function AccountsTab() {
 
       {canManage && (
         <Card className="p-4">
-          <h3 className="mb-3 text-sm font-medium">Nova conta</h3>
+          {/* O mesmo formulário serve para criar e corrigir: uma segunda cópia
+              só para editar sairia de sincronia no primeiro campo novo. */}
+          <h3 className="mb-3 text-sm font-medium">{editing ? 'Editar conta' : 'Nova conta'}</h3>
           <form onSubmit={submit} className="space-y-3">
             <div className="space-y-1.5">
               <Label htmlFor="account-name">Nome</Label>
@@ -258,12 +328,58 @@ function AccountsTab() {
                 onChange={setOpeningBalanceCents}
               />
             </div>
-            <Button type="submit" className="w-full" disabled={create.isPending}>
-              <Plus /> Criar conta
-            </Button>
+            <div className="flex gap-2">
+              {editing && (
+                <Button type="button" variant="ghost" className="flex-1" onClick={resetForm}>
+                  Cancelar
+                </Button>
+              )}
+              <Button
+                type="submit"
+                className="flex-1"
+                disabled={create.isPending || update.isPending}
+              >
+                {editing ? (
+                  'Salvar alterações'
+                ) : (
+                  <>
+                    <Plus /> Criar conta
+                  </>
+                )}
+              </Button>
+            </div>
           </form>
         </Card>
       )}
+
+      <ConfirmDialog
+        open={deleting != null}
+        onOpenChange={(open) => {
+          if (!open) setDeleting(null)
+        }}
+        title="Excluir esta conta?"
+        description={
+          deleting && (movementsByAccount.get(deleting.id) ?? 0) > 0
+            ? `Esta conta tem ${movementsByAccount.get(deleting.id)} lançamentos. Excluí-la deixaria o caixa sem origem — desative-a no botão "Ativa" para tirá-la de circulação sem perder o histórico.`
+            : 'A conta some das opções de lançamento. Como não há movimentação nela, nenhum saldo muda.'
+        }
+        confirmLabel="Excluir conta"
+        destructive
+        onConfirm={async () => {
+          if (!deleting) return
+          if ((movementsByAccount.get(deleting.id) ?? 0) > 0) {
+            toast.error('Conta com lançamentos não pode ser excluída. Desative-a.')
+            return
+          }
+          try {
+            await removeAccount.mutateAsync(deleting.id)
+            toast.success('Conta excluída.')
+            setDeleting(null)
+          } catch (cause) {
+            toast.error(cause instanceof Error ? cause.message : 'Não foi possível excluir.')
+          }
+        }}
+      />
     </div>
   )
 }
@@ -572,11 +688,7 @@ function DataTab({ workspaceId }: { workspaceId: string }) {
           <Button variant="outline" onClick={() => void exportData()}>
             <Download /> Exportar JSON
           </Button>
-          <Button
-            variant="outline"
-            disabled={importing}
-            onClick={() => fileInput.current?.click()}
-          >
+          <Button variant="outline" disabled={importing} onClick={() => fileInput.current?.click()}>
             <Upload /> Importar JSON
           </Button>
           <input

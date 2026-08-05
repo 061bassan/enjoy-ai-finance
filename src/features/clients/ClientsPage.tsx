@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { toast } from 'sonner'
-import { Plus, Users } from 'lucide-react'
+import { MoreHorizontal, Pencil, Plus, Trash2, Users } from 'lucide-react'
 import { data } from '@/data'
 import { formatDate, today } from '@/lib/date'
 import { formatMoney, formatNumber, formatPercent } from '@/lib/money'
@@ -9,6 +9,7 @@ import type { Client, ClientStatus, LeadSource } from '@/data/types'
 import { activeSales, churnRate } from '@/domain/sales'
 import { usePeriod } from '@/app/period'
 import { useSession } from '@/app/session'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { KpiCard, KpiGrid } from '@/components/KpiCard'
 import { EmptyState, PageHeader } from '@/components/PageHeader'
 import { Badge } from '@/components/ui/badge'
@@ -21,6 +22,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -38,7 +45,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { useClients, useCreate, useSales, useUpdate } from '@/hooks/data'
+import { useClients, useCreate, useRemove, useSales, useUpdate } from '@/hooks/data'
 
 /**
  * Carteira de clientes.
@@ -54,8 +61,11 @@ export function ClientsPage() {
   const { data: clients = [], isLoading } = useClients()
   const { data: sales = [] } = useSales()
   const [dialogOpen, setDialogOpen] = React.useState(false)
+  const [editing, setEditing] = React.useState<Client | null>(null)
+  const [deleting, setDeleting] = React.useState<{ client: Client; count: number } | null>(null)
 
   const update = useUpdate('clients', data.clients)
+  const removeClient = useRemove('clients', data.clients)
 
   const rows = React.useMemo(() => {
     const byClient = new Map<string, { total: number; mrr: number; count: number }>()
@@ -90,7 +100,10 @@ export function ClientsPage() {
       churned: churned.length,
       activeMrr,
       averageTicket: active.length
-        ? Math.round(rows.filter((r) => r.client.status === 'active').reduce((s, r) => s + r.total, 0) / active.length)
+        ? Math.round(
+            rows.filter((r) => r.client.status === 'active').reduce((s, r) => s + r.total, 0) /
+              active.length,
+          )
         : 0,
       churn: churnRate(clients, range),
     }
@@ -115,7 +128,12 @@ export function ClientsPage() {
         description="Carteira, receita acumulada por cliente e churn."
         actions={
           canManage && (
-            <Button onClick={() => setDialogOpen(true)}>
+            <Button
+              onClick={() => {
+                setEditing(null)
+                setDialogOpen(true)
+              }}
+            >
               <Plus /> Novo cliente
             </Button>
           )
@@ -155,6 +173,7 @@ export function ClientsPage() {
                   MRR
                 </TableHead>
                 <TableHead className="w-[150px]">Status</TableHead>
+                {canManage && <TableHead className="w-10" />}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -211,6 +230,35 @@ export function ClientsPage() {
                       </Badge>
                     )}
                   </TableCell>
+
+                  {canManage && (
+                    <TableCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={`Ações de ${client.name}`}
+                          >
+                            <MoreHorizontal />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            onSelect={() => {
+                              setEditing(client)
+                              setDialogOpen(true)
+                            }}
+                          >
+                            <Pencil /> Editar
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => setDeleting({ client, count })}>
+                            <Trash2 /> Excluir
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>
@@ -218,7 +266,38 @@ export function ClientsPage() {
         )}
       </Card>
 
-      <ClientDialog open={dialogOpen} onOpenChange={setDialogOpen} />
+      <ClientDialog open={dialogOpen} onOpenChange={setDialogOpen} client={editing} />
+
+      <ConfirmDialog
+        open={deleting != null}
+        onOpenChange={(open) => {
+          if (!open) setDeleting(null)
+        }}
+        title="Excluir este cliente?"
+        description={
+          deleting?.count
+            ? `${deleting.client.name} tem ${deleting.count} ${
+                deleting.count === 1 ? 'venda registrada' : 'vendas registradas'
+              }. Excluir o cadastro deixaria essas vendas sem dono e a receita por cliente pararia de fechar. Marque como "cancelado" no status em vez de excluir.`
+            : 'O cadastro sai da carteira. Como não há venda ligada a ele, nenhum indicador muda.'
+        }
+        confirmLabel="Excluir cliente"
+        destructive
+        onConfirm={async () => {
+          if (!deleting) return
+          if (deleting.count > 0) {
+            toast.error('Cliente com vendas não pode ser excluído. Marque-o como cancelado.')
+            return
+          }
+          try {
+            await removeClient.mutateAsync(deleting.client.id)
+            toast.success('Cliente excluído.')
+            setDeleting(null)
+          } catch (cause) {
+            toast.error(cause instanceof Error ? cause.message : 'Não foi possível excluir.')
+          }
+        }}
+      />
     </>
   )
 }
@@ -226,12 +305,16 @@ export function ClientsPage() {
 function ClientDialog({
   open,
   onOpenChange,
+  client = null,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Quando presente, corrige o cadastro em vez de criar outro. */
+  client?: Client | null
 }) {
   const { session } = useSession()
   const create = useCreate('clients', data.clients)
+  const update = useUpdate('clients', data.clients)
 
   const [name, setName] = React.useState('')
   const [company, setCompany] = React.useState('')
@@ -242,13 +325,13 @@ function ClientDialog({
 
   React.useEffect(() => {
     if (!open) return
-    setName('')
-    setCompany('')
-    setEmail('')
-    setPhone('')
-    setSource('')
-    setStatus('lead')
-  }, [open])
+    setName(client?.name ?? '')
+    setCompany(client?.company ?? '')
+    setEmail(client?.email ?? '')
+    setPhone(client?.phone ?? '')
+    setSource(client?.source ?? '')
+    setStatus(client?.status ?? 'lead')
+  }, [open, client])
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
@@ -258,14 +341,35 @@ function ClientDialog({
       return
     }
 
-    await create.mutateAsync({
-      workspaceId: session.workspaceId,
+    const fields = {
       name: name.trim(),
       company: company.trim() || null,
       email: email.trim() || null,
       phone: phone.trim() || null,
       status,
       source: (source || null) as LeadSource | null,
+    }
+
+    if (client) {
+      await update.mutateAsync({
+        id: client.id,
+        patch: {
+          ...fields,
+          // A data de início não é reescrita a cada edição: ela é o marco do
+          // relacionamento, e recalcular apagaria o histórico de quanto tempo
+          // o cliente está na casa.
+          startDate: client.startDate ?? (status === 'active' ? today() : null),
+          churnDate: status === 'churned' ? (client.churnDate ?? today()) : null,
+        },
+      })
+      toast.success('Cliente atualizado.')
+      onOpenChange(false)
+      return
+    }
+
+    await create.mutateAsync({
+      workspaceId: session.workspaceId,
+      ...fields,
       startDate: status === 'active' ? today() : null,
       churnDate: null,
       ownerId: session.user.id,
@@ -280,7 +384,7 @@ function ClientDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Novo cliente</DialogTitle>
+          <DialogTitle>{client ? 'Editar cliente' : 'Novo cliente'}</DialogTitle>
         </DialogHeader>
 
         <form onSubmit={submit} className="space-y-4">

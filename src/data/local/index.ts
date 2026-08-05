@@ -1,8 +1,50 @@
-import type { DataProvider } from '../contracts'
+import type { DataProvider, Repository } from '../contracts'
+import type { Profile } from '../types'
 import { LocalAuth } from './auth'
 import { db, TABLE_NAMES } from './db'
 import { LocalOperations } from './operations'
 import { createRepository } from './repository'
+
+/**
+ * Perfis sem o hash da senha.
+ *
+ * A UI lê a lista inteira de perfis para resolver nomes de closer, SDR e
+ * responsável — e recebia junto o `passwordHash` de todo mundo. Ele não é a
+ * senha, mas é material para ataque offline por lista de senhas comuns, e
+ * viajava para dentro de qualquer componente, log de erro ou estado
+ * serializado.
+ *
+ * A autenticação continua lendo `db.profiles` direto, que é onde o hash
+ * precisa mesmo estar. Este filtro vale para o resto do aplicativo, que
+ * nunca teve motivo para conhecê-lo.
+ */
+function createProfileRepository(): Repository<Profile> {
+  const base = createRepository(db.profiles, 'profiles', { scoped: false })
+  const strip = (profile: Profile): Profile => ({ ...profile, passwordHash: null })
+
+  return {
+    ...base,
+    async list(workspaceId, query) {
+      return (await base.list(workspaceId, query)).map(strip)
+    },
+    async get(id) {
+      const profile = await base.get(id)
+      return profile ? strip(profile) : null
+    },
+    async findBy(workspaceId, where) {
+      return (await base.findBy(workspaceId, where)).map(strip)
+    },
+    /**
+     * Atualizar um perfil **nunca** mexe na senha por este caminho: um patch
+     * vindo da UI carregaria o `passwordHash: null` que ela recebeu na
+     * leitura e apagaria a credencial da pessoa sem que ninguém pedisse.
+     */
+    async update(id, patch) {
+      const { passwordHash: _ignored, ...safe } = patch as Partial<Profile>
+      return strip(await base.update(id, safe))
+    },
+  }
+}
 
 /**
  * Provider local — IndexedDB via Dexie.
@@ -18,7 +60,7 @@ export function createLocalProvider(): DataProvider {
     auth: new LocalAuth(),
     ops: new LocalOperations(),
 
-    profiles: createRepository(db.profiles, 'profiles', { scoped: false }),
+    profiles: createProfileRepository(),
     workspaces: createRepository(db.workspaces, 'workspaces', { scoped: false }),
     members: createRepository(db.members, 'members'),
 

@@ -33,11 +33,11 @@ rodando 100% no navegador (IndexedDB). A fase 9 — persistência real no Supaba
 
 | Verificação | Estado |
 |---|---|
-| `npm run test` | 168 testes passando (10 arquivos: domínio, provider local, validações) |
+| `npm run test` | 182 testes passando (12 arquivos: domínio, provider local, validações) |
 | `npm run typecheck` | limpo |
-| `npm run lint` | 0 erros, 5 avisos `react-refresh/only-export-components` (inofensivos) |
+| `npm run lint` | 0 erros, 6 avisos `react-refresh/only-export-components` (inofensivos) |
 | `npm run build` | ok, ~14 s |
-| Bundle inicial | ~189 kB gzip (`react` 51 + `data` 48 + `index` 90) |
+| Bundle inicial | ~190 kB gzip (`react` 51 + `data` 48 + `index` 91) |
 
 ---
 
@@ -160,6 +160,11 @@ Funções sem I/O, sem React, sem data-de-hoje implícita (a data entra por par�
 `goals.ts` · `recurrence.ts` · `leads.ts` · `membership.ts`
 
 `leads.ts` é onde mora a **taxa de conversão** (`conversionRate`): vendas reais ÷ leads.
+`commercial.ts` usa a mesma conta no **win rate** do funil (`commercialKpis`): vendas
+registradas ÷ leads do período, com o CRM preferido sobre o total digitado no diário. A
+métrica antiga — propostas aprovadas ÷ propostas decididas — continua existindo como
+`proposalApprovalRate`, porque responde outra pergunta (a qualidade da proposta, não a do
+funil inteiro).
 `membership.ts` guarda as regras da fila de aprovação — as mesmas que a UI, o provider
 local e a função RPC do Postgres precisam aplicar. Regra escrita três vezes diverge na
 terceira.
@@ -239,6 +244,18 @@ matriz — a matriz guarda só a capacidade.
 16. **O backup JSON não carrega senha.** `exportWorkspace` zera `passwordHash`, e o
     import preserva o hash de quem já está na base — senão reimportar o próprio backup
     trancaria a pessoa para fora.
+17. **Tudo que se cria, se corrige.** Quem pode registrar um fato pode editá-lo e
+    apagá-lo, na mesma tela e sob a mesma permissão. Criar sem poder corrigir empurra a
+    pessoa para o duplicado: ela lança de novo "certo" e deixa o errado para trás.
+18. **Registro com dinheiro atrás não se apaga por baixo.** Título com baixa bloqueia a
+    exclusão do título, a exclusão da venda e a regeração dos recebíveis; conta com
+    lançamento e cliente com venda idem. O caminho é sempre desfazer o que veio depois
+    (estornar a baixa) e só então mexer no que veio antes. Apagar por cima deixaria
+    dinheiro no caixa sem origem, que é a única coisa que o sistema não pode permitir.
+19. **Esconder do menu não é proteger.** Toda rota com `requires` na navegação é barrada
+    por `RequirePermission` em `src/app/routes.tsx` — o menu e o roteador leem a mesma
+    lista. E o painel financeiro sequer é montado para quem não tem `view:financials`:
+    esse papel recebe `OwnDashboard`, com a própria carteira.
 
 ---
 
@@ -250,8 +267,8 @@ matriz — a matriz guarda só a capacidade.
 | `/performance` | `features/performance/` | Séries temporais, receita por closer/SDR/canal, funil |
 | `/executivo` | `features/executive/` | ARR, churn, LTV, LTV/CAC, forecast, burn, runway |
 | `/vendas` | `features/sales/` | Vendas com comissões e economia unitária |
-| `/leads` | `features/leads/` | CRM: quadro por etapa, acompanhamento, conversão em venda |
-| `/comercial` | `features/commercial/` | Diário comercial, CPL, custo/reunião, CAC, win rate |
+| `/leads` | `features/leads/` | CRM: kanban por etapa (`LeadBoard`), acompanhamento, conversão |
+| `/comercial` | `features/commercial/` | Diário comercial, CPL, custo/reunião, CAC, win rate (vendas ÷ leads) |
 | `/clientes` | `features/clients/` | Carteira, receita por cliente, churn |
 | `/transacoes` | `features/transactions/` | CRUD com filtros |
 | `/fluxo-de-caixa` | `features/cashflow/` | Previsto vs. realizado, capital de giro, runway |
@@ -268,6 +285,12 @@ matriz — a matriz guarda só a capacidade.
 - `settleBill` — baixa total/parcial: cria `BillPayment`, gera a `Transaction` de caixa,
   atualiza o `Bill`. É o "previsto vira realizado".
 - `createSaleWithReceivables` — venda + títulos a receber (setup + parcelas de MRR).
+- `updateSaleWithReceivables` — corrige a venda e, se pedido, refaz os títulos. Recusa
+  refazer quando algum já foi recebido: o dinheiro no caixa não pode ficar sem título.
+- `deleteSale` — apaga venda, custos, títulos em aberto e cards ligados; devolve para
+  `negociacao` o lead que tinha sido convertido, preservando a invariante 13.
+- `deleteTransaction` — apaga as duas pernas de uma transferência juntas e recusa apagar
+  a transação que nasceu de uma baixa.
 - `moveCard` — move o card e executa a ação da coluna de destino (`onDropAction`).
 - `convertLeadToSale` — lead ganho vira cliente + venda + títulos numa transação só.
   Reaproveita o cliente quando o lead já aponta para um, senão a carteira duplicaria.
@@ -359,25 +382,25 @@ local, a diferença aparece ali e não em produção.
 
 Remoto: **`061bassan/enjoy-ai-finance`** (privado), branch única `main`.
 
-### Deploy — adiado por decisão, não por esquecimento
+### Deploy — Vercel, ligada ao repositório
 
-**Não há ambiente publicado.** A escolha foi consciente: hoje os dados vivem no
-IndexedDB do navegador, então um app publicado seria uma base por dispositivo — abrir a
-URL no celular não mostraria nada do que foi lançado no desktop. Publicar antes da fase 9
-entrega uma promessa que o produto ainda não cumpre.
+A hospedagem é a **Vercel**, conectada ao repositório: cada push em `main` publica, e
+cada branch ganha preview próprio. Não há mais Netlify no caminho — `netlify.toml` e
+`public/_redirects` continuam no repositório apenas como plano B para trocar de serviço
+sem redescobrir a configuração de SPA.
 
-**A ordem certa é: Supabase primeiro, deploy depois.** Com a persistência no servidor, o
-deploy passa a valer de verdade — e é trivial, porque o build é estático.
+Três coisas a lembrar:
 
-Quando chegar a hora, o encaixe natural é a **Vercel** (free tier aceita repo privado,
-detecta Vite sozinho, preview por branch). Duas coisas a lembrar:
-
-- Configurar as variáveis `VITE_*` no painel do serviço — o build as embute, então
-  **qualquer chave ali vira pública**. Só a `anon key` do Supabase pode ir; a proteção
-  real é o RLS.
-- SPA precisa de fallback para `index.html`, senão `/vendas` dá 404 no reload. A Vercel
-  resolve sozinha em projeto Vite; Netlify e Cloudflare exigem `_redirects` ou
-  `netlify.toml`.
+- **Toda variável `VITE_*` do painel vira pública.** O build as embute no JavaScript que
+  vai para o navegador. Só a `anon key` do Supabase pode ir ali; a proteção real é o RLS.
+  Nenhuma `service_role` key, nunca.
+- **SPA precisa de fallback para `index.html`**, senão `/vendas` dá 404 no reload. A
+  Vercel resolve sozinha em projeto Vite; se um dia mudar de serviço, o `netlify.toml`
+  guarda a receita.
+- **Enquanto os dados vivem no IndexedDB, cada dispositivo é uma base.** Abrir a URL
+  publicada no celular não mostra o que foi lançado no desktop, e nenhuma configuração de
+  deploy conserta isso — quem conserta é a fase 9. Vale saber disso antes de mostrar a URL
+  para alguém e ouvir "está vazio".
 
 ### CI — pendência de permissão
 

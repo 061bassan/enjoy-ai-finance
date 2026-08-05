@@ -1,18 +1,14 @@
 import * as React from 'react'
 import { toast } from 'sonner'
-import { CalendarPlus, Plus, Repeat } from 'lucide-react'
+import { CalendarPlus, MoreHorizontal, Pencil, Plus, Repeat, Trash2 } from 'lucide-react'
 import { data } from '@/data'
 import { addMonths, formatDate, fromIsoDate, toIsoDate, today } from '@/lib/date'
 import { formatMoney, formatPercent } from '@/lib/money'
-import {
-  COST_CENTER_LABEL,
-  COST_CENTERS,
-  FREQUENCY_LABEL,
-  optionsFrom,
-} from '@/data/enums'
+import { COST_CENTER_LABEL, COST_CENTERS, FREQUENCY_LABEL, optionsFrom } from '@/data/enums'
 import type { CostCenter, Frequency, RecurringRule } from '@/data/types'
 import { monthlyEquivalent, nextOccurrence, totalMonthlyCost } from '@/domain/recurrence'
 import { useSession } from '@/app/session'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { DateField } from '@/components/DateField'
 import { KpiCard, KpiGrid } from '@/components/KpiCard'
 import { EmptyState, PageHeader } from '@/components/PageHeader'
@@ -28,6 +24,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Progress } from '@/components/ui/progress'
@@ -53,6 +55,7 @@ import {
   useCreate,
   useGenerateBillsFromRule,
   useRecurringRules,
+  useRemove,
   useUpdate,
 } from '@/hooks/data'
 
@@ -74,8 +77,16 @@ export function RecurringPage() {
   const { data: accounts = [] } = useAccounts()
 
   const update = useUpdate('recurringRules', data.recurringRules)
+  const removeRule = useRemove('recurringRules', data.recurringRules)
   const generate = useGenerateBillsFromRule()
   const [dialogOpen, setDialogOpen] = React.useState(false)
+  const [editing, setEditing] = React.useState<RecurringRule | null>(null)
+  const [deleting, setDeleting] = React.useState<RecurringRule | null>(null)
+
+  function openEdit(rule: RecurringRule) {
+    setEditing(rule)
+    setDialogOpen(true)
+  }
 
   const categoryNames = React.useMemo(
     () => new Map(categories.map((category) => [category.id, category.name])),
@@ -105,7 +116,8 @@ export function RecurringPage() {
       byCenter: [...byCenter.entries()]
         .map(([key, total]) => ({
           key,
-          label: key === 'sem-centro' ? 'Sem centro de custo' : COST_CENTER_LABEL[key as CostCenter],
+          label:
+            key === 'sem-centro' ? 'Sem centro de custo' : COST_CENTER_LABEL[key as CostCenter],
           total,
           share: monthlyCost ? total / monthlyCost : 0,
         }))
@@ -193,7 +205,12 @@ export function RecurringPage() {
                 description="Cadastre salários, aluguel, softwares e verba fixa de tráfego para conhecer o custo real de operação."
                 action={
                   canManage && (
-                    <Button onClick={() => setDialogOpen(true)}>
+                    <Button
+                      onClick={() => {
+                        setEditing(null)
+                        setDialogOpen(true)
+                      }}
+                    >
                       <Plus /> Nova regra
                     </Button>
                   )
@@ -254,15 +271,36 @@ export function RecurringPage() {
 
                       <TableCell>
                         {canManage && (
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            title="Gerar títulos dos próximos 3 meses"
-                            onClick={() => void materialize(rule)}
-                            disabled={generate.isPending}
-                          >
-                            <CalendarPlus />
-                          </Button>
+                          <div className="flex items-center justify-end gap-0.5">
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              title="Gerar títulos dos próximos 3 meses"
+                              onClick={() => void materialize(rule)}
+                              disabled={generate.isPending}
+                            >
+                              <CalendarPlus />
+                            </Button>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  aria-label={`Ações da regra ${rule.name}`}
+                                >
+                                  <MoreHorizontal />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onSelect={() => openEdit(rule)}>
+                                  <Pencil /> Editar
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onSelect={() => setDeleting(rule)}>
+                                  <Trash2 /> Excluir
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
                         )}
                       </TableCell>
                     </TableRow>
@@ -280,6 +318,28 @@ export function RecurringPage() {
         categories={categories}
         accounts={accounts}
         workspaceId={session?.workspaceId ?? ''}
+        rule={editing}
+      />
+
+      <ConfirmDialog
+        open={deleting != null}
+        onOpenChange={(open) => {
+          if (!open) setDeleting(null)
+        }}
+        title="Excluir esta regra?"
+        description="A regra some do custo de operação e para de gerar títulos novos. Os títulos já gerados continuam em Contas a pagar — apague-os por lá se também não valerem mais."
+        confirmLabel="Excluir regra"
+        destructive
+        onConfirm={async () => {
+          if (!deleting) return
+          try {
+            await removeRule.mutateAsync(deleting.id)
+            toast.success('Regra excluída.')
+            setDeleting(null)
+          } catch (cause) {
+            toast.error(cause instanceof Error ? cause.message : 'Não foi possível excluir.')
+          }
+        }}
       />
     </>
   )
@@ -291,14 +351,18 @@ function RuleDialog({
   categories,
   accounts,
   workspaceId,
+  rule = null,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   categories: { id: string; name: string; kind: string; costCenter: CostCenter | null }[]
   accounts: { id: string; name: string }[]
   workspaceId: string
+  /** Quando presente, corrige a regra existente. */
+  rule?: RecurringRule | null
 }) {
   const create = useCreate('recurringRules', data.recurringRules)
+  const update = useUpdate('recurringRules', data.recurringRules)
 
   const [name, setName] = React.useState('')
   const [kind, setKind] = React.useState<'expense' | 'income'>('expense')
@@ -312,16 +376,16 @@ function RuleDialog({
 
   React.useEffect(() => {
     if (!open) return
-    setName('')
-    setKind('expense')
-    setAmountCents(0)
-    setFrequency('monthly')
-    setDayOfMonth(5)
-    setStartDate(today())
-    setCategoryId(NONE)
-    setCostCenter('')
-    setAccountId(NONE)
-  }, [open])
+    setName(rule?.name ?? '')
+    setKind(rule?.kind ?? 'expense')
+    setAmountCents(rule?.amountCents ?? 0)
+    setFrequency(rule?.frequency ?? 'monthly')
+    setDayOfMonth(rule?.dayOfMonth ?? 5)
+    setStartDate(rule?.startDate ?? today())
+    setCategoryId(rule?.categoryId ?? NONE)
+    setCostCenter(rule?.costCenter ?? '')
+    setAccountId(rule?.accountId ?? NONE)
+  }, [open, rule])
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
@@ -334,19 +398,32 @@ function RuleDialog({
       return
     }
 
-    await create.mutateAsync({
-      workspaceId,
+    const fields = {
       name: name.trim(),
       kind,
       amountCents,
       categoryId: categoryId === NONE ? null : categoryId,
       costCenter: (costCenter || null) as CostCenter | null,
       accountId: accountId === NONE ? null : accountId,
-      clientId: null,
       frequency,
-      interval: 1,
       dayOfMonth,
       startDate,
+    }
+
+    if (rule) {
+      await update.mutateAsync({ id: rule.id, patch: fields })
+      // Os títulos já materializados não mudam sozinhos — dizer isso evita
+      // que alguém aumente o aluguel e ache que o previsto se ajustou.
+      toast.success('Regra atualizada. Os títulos já gerados mantêm o valor antigo.')
+      onOpenChange(false)
+      return
+    }
+
+    await create.mutateAsync({
+      workspaceId,
+      ...fields,
+      clientId: null,
+      interval: 1,
       endDate: null,
       autoGenerate: true,
       active: true,
@@ -357,15 +434,13 @@ function RuleDialog({
     onOpenChange(false)
   }
 
-  const preview = amountCents
-    ? monthlyEquivalent({ amountCents, frequency, interval: 1 })
-    : 0
+  const preview = amountCents ? monthlyEquivalent({ amountCents, frequency, interval: 1 }) : 0
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="lg">
         <DialogHeader>
-          <DialogTitle>Nova regra recorrente</DialogTitle>
+          <DialogTitle>{rule ? 'Editar regra recorrente' : 'Nova regra recorrente'}</DialogTitle>
           <DialogDescription>
             Custos e receitas que se repetem. Entram no custo de operação mensal e geram títulos
             automaticamente.
@@ -387,7 +462,10 @@ function RuleDialog({
 
             <div className="space-y-1.5">
               <Label>Tipo</Label>
-              <Select value={kind} onValueChange={(value) => setKind(value as 'expense' | 'income')}>
+              <Select
+                value={kind}
+                onValueChange={(value) => setKind(value as 'expense' | 'income')}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>

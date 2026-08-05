@@ -10,6 +10,29 @@ import { newId } from './repository'
 import { seedWorkspacesFor } from './seed'
 
 const SESSION_KEY = 'enjoy.session'
+const THROTTLE_KEY = 'enjoy.signin.attempts'
+
+/**
+ * Por quanto tempo uma sessão parada continua valendo.
+ *
+ * Doze horas cobrem um dia de trabalho inteiro sem pedir senha de novo, e
+ * fecham a porta do notebook esquecido aberto na mesa. Sem prazo nenhum, a
+ * sessão gravada no `localStorage` durava para sempre — quem sentasse na
+ * mesma máquina no dia seguinte entrava como a pessoa anterior.
+ */
+const SESSION_MAX_IDLE_MS = 12 * 60 * 60 * 1000
+
+/** A partir de quantos erros seguidos o login começa a esperar. */
+const THROTTLE_AFTER_ATTEMPTS = 5
+/** Teto da espera: 30 segundos entre tentativas. */
+const THROTTLE_MAX_MS = 30_000
+
+interface StoredSession {
+  userId: Id
+  workspaceId: Id
+  /** Último uso — base da expiração por inatividade. */
+  seenAt?: number
+}
 
 /**
  * Autenticação local.
@@ -24,18 +47,81 @@ const SESSION_KEY = 'enjoy.session'
 export class LocalAuth implements AuthGateway {
   private listeners = new Set<(session: Session | null) => void>()
 
-  private read(): { userId: Id; workspaceId: Id } | null {
+  private read(): StoredSession | null {
     try {
       const raw = localStorage.getItem(SESSION_KEY)
-      return raw ? (JSON.parse(raw) as { userId: Id; workspaceId: Id }) : null
+      if (!raw) return null
+
+      const stored = JSON.parse(raw) as StoredSession
+      if (!stored?.userId) return null
+
+      // Sessão parada tempo demais não vale mais. Sessões gravadas antes
+      // desta regra não têm `seenAt`: valem por mais uma abertura, que
+      // carimba o campo — expulsar todo mundo de uma vez seria pior.
+      if (stored.seenAt != null && Date.now() - stored.seenAt > SESSION_MAX_IDLE_MS) {
+        localStorage.removeItem(SESSION_KEY)
+        return null
+      }
+
+      return stored
     } catch {
       return null
     }
   }
 
   private write(value: { userId: Id; workspaceId: Id } | null) {
-    if (value) localStorage.setItem(SESSION_KEY, JSON.stringify(value))
-    else localStorage.removeItem(SESSION_KEY)
+    if (value) {
+      localStorage.setItem(SESSION_KEY, JSON.stringify({ ...value, seenAt: Date.now() }))
+    } else {
+      localStorage.removeItem(SESSION_KEY)
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Freio de tentativas
+  // -------------------------------------------------------------------------
+
+  /**
+   * Espera crescente depois de erros seguidos de senha.
+   *
+   * **Isto não é proteção contra um atacante com o dispositivo**: quem abre o
+   * DevTools limpa o contador ou lê o IndexedDB direto. Serve contra o caso
+   * real e comum — alguém sentado na máquina tentando adivinhar a senha do
+   * sócio na mão, ou um script bobo na mesma aba. Fica no `localStorage`, e
+   * não em memória, porque em memória bastaria recarregar a página.
+   *
+   * A trava de verdade chega com o Supabase Auth, que aplica o limite no
+   * servidor, onde ninguém alcança.
+   */
+  private failedAttempts(email: string): number {
+    try {
+      const raw = localStorage.getItem(THROTTLE_KEY)
+      const map = raw ? (JSON.parse(raw) as Record<string, number>) : {}
+      return map[email] ?? 0
+    } catch {
+      return 0
+    }
+  }
+
+  private recordAttempt(email: string, failed: boolean) {
+    try {
+      const raw = localStorage.getItem(THROTTLE_KEY)
+      const map = raw ? (JSON.parse(raw) as Record<string, number>) : {}
+      if (failed) map[email] = (map[email] ?? 0) + 1
+      else delete map[email]
+      localStorage.setItem(THROTTLE_KEY, JSON.stringify(map))
+    } catch {
+      // Armazenamento cheio ou bloqueado: o login não pode falhar por causa
+      // do contador — ele é defesa extra, não requisito.
+    }
+  }
+
+  private async waitForThrottle(email: string) {
+    const attempts = this.failedAttempts(email)
+    if (attempts < THROTTLE_AFTER_ATTEMPTS) return
+
+    const delay = Math.min(THROTTLE_MAX_MS, 2 ** (attempts - THROTTLE_AFTER_ATTEMPTS) * 1000)
+    await new Promise((resolve) => setTimeout(resolve, delay))
   }
 
   private async notify() {
@@ -107,7 +193,13 @@ export class LocalAuth implements AuthGateway {
       if (virtual) direct.push(virtual)
     }
 
-    const rank: Record<string, number> = { active: 0, pending: 1, invited: 2, rejected: 3, suspended: 4 }
+    const rank: Record<string, number> = {
+      active: 0,
+      pending: 1,
+      invited: 2,
+      rejected: 3,
+      suspended: 4,
+    }
     return direct.sort((a, b) => (rank[a.status] ?? 9) - (rank[b.status] ?? 9))
   }
 
@@ -131,7 +223,11 @@ export class LocalAuth implements AuthGateway {
     }
 
     const member = await this.membershipIn(stored.workspaceId, stored.userId)
-    if (member) return this.toSession(user, member)
+    if (member) {
+      // Abrir o app conta como uso: renova o prazo de inatividade.
+      this.write({ userId: stored.userId, workspaceId: stored.workspaceId })
+      return this.toSession(user, member)
+    }
 
     // Perdeu o vínculo com o espaço guardado: cai no primeiro disponível.
     const fallback = await this.primaryMembership(stored.userId)
@@ -145,10 +241,13 @@ export class LocalAuth implements AuthGateway {
 
   async signIn(email: string, password: string): Promise<Session> {
     const normalized = normalizeEmail(email)
+    await this.waitForThrottle(normalized)
+
     const user = await db.profiles.where('email').equals(normalized).first()
     if (!user) {
       // Mensagem genérica de propósito: dizer "e-mail não existe" entrega a
       // lista de quem tem conta a quem estiver tentando adivinhar.
+      this.recordAttempt(normalized, true)
       throw new AuthError(AUTH_ERROR.invalidCredentials, 'E-mail ou senha incorretos.')
     }
 
@@ -160,8 +259,12 @@ export class LocalAuth implements AuthGateway {
     }
 
     const ok = await verifyPassword(password, user.passwordHash)
-    if (!ok) throw new AuthError(AUTH_ERROR.invalidCredentials, 'E-mail ou senha incorretos.')
+    if (!ok) {
+      this.recordAttempt(normalized, true)
+      throw new AuthError(AUTH_ERROR.invalidCredentials, 'E-mail ou senha incorretos.')
+    }
 
+    this.recordAttempt(normalized, false)
     return this.startSession(user)
   }
 
@@ -195,7 +298,8 @@ export class LocalAuth implements AuthGateway {
 
   private async startSession(user: Profile): Promise<Session> {
     const member = await this.primaryMembership(user.id)
-    if (!member) throw new AuthError(AUTH_ERROR.noWorkspace, 'Este usuário não pertence a nenhum espaço.')
+    if (!member)
+      throw new AuthError(AUTH_ERROR.noWorkspace, 'Este usuário não pertence a nenhum espaço.')
 
     this.write({ userId: user.id, workspaceId: member.workspaceId })
     void this.notify()
@@ -306,7 +410,8 @@ export class LocalAuth implements AuthGateway {
     }
 
     const user = await db.profiles.get(stored.userId)
-    if (!user) throw new AuthError(AUTH_ERROR.invalidCredentials, 'Usuário da sessão não existe mais.')
+    if (!user)
+      throw new AuthError(AUTH_ERROR.invalidCredentials, 'Usuário da sessão não existe mais.')
 
     this.write({ userId: stored.userId, workspaceId })
     void this.notify()

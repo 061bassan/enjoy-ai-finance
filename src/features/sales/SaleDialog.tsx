@@ -14,11 +14,13 @@ import type {
   LeadSource,
   PaymentMethod,
   Profile,
+  Sale,
+  SaleCost,
   SaleModel,
   SaleStatus,
 } from '@/data/types'
 import { useSession } from '@/app/session'
-import { useCreateSale } from '@/hooks/data'
+import { useCreateSale, useUpdateSale } from '@/hooks/data'
 import { DateField } from '@/components/DateField'
 import { MoneyInput } from '@/components/MoneyInput'
 import { Button } from '@/components/ui/button'
@@ -46,26 +48,37 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 const NONE = '__none__'
 
 /**
- * Registro de venda.
+ * Registro de venda — criação e edição no mesmo formulário.
  *
- * Ao salvar, os títulos a receber nascem junto — setup vira um título, MRR
- * vira um por mês de contrato, e modelos sem recorrência dividem o valor nas
+ * Ao criar, os títulos a receber nascem junto: setup vira um título, MRR vira
+ * um por mês de contrato, e modelos sem recorrência dividem o valor nas
  * parcelas. Sem isso, alguém teria que lançar as cobranças à mão e o previsto
  * do fluxo de caixa nunca bateria com o que foi vendido.
+ *
+ * Um formulário só para os dois modos é deliberado: duplicá-lo garantiria que
+ * a versão de edição ficasse para trás na primeira regra nova de comissão ou
+ * de parcelamento, e a pessoa veria contas diferentes para a mesma venda.
  */
 export function SaleDialog({
   open,
   onOpenChange,
   clients,
   profiles,
+  sale = null,
+  saleCost = null,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   clients: Client[]
   profiles: Profile[]
+  /** Quando presente, o diálogo edita em vez de criar. */
+  sale?: Sale | null
+  saleCost?: SaleCost | null
 }) {
   const { session } = useSession()
   const createSale = useCreateSale()
+  const updateSale = useUpdateSale()
+  const isEditing = sale != null
 
   const [clientId, setClientId] = React.useState<string>(NONE)
   const [clientName, setClientName] = React.useState('')
@@ -98,37 +111,81 @@ export function SaleDialog({
   const [travelCents, setTravelCents] = React.useState(0)
   const [otherCents, setOtherCents] = React.useState(0)
 
+  /**
+   * Preenche o formulário toda vez que ele abre.
+   *
+   * Criar zera; editar carrega a venda. Fica num efeito só porque o estado a
+   * ser preenchido é exatamente o mesmo — dois efeitos separados divergiriam
+   * assim que um campo novo entrasse em apenas um deles.
+   */
   React.useEffect(() => {
     if (!open) return
-    setClientId(NONE)
-    setClientName('')
-    setCompany('')
-    setSaleDate(today())
-    setLeadCreatedAt('')
-    setCloserId(NONE)
-    setSdrId(NONE)
-    setLeadSource('')
-    setModel('mrr')
-    setMrrCents(0)
-    setSetupCents(0)
-    setOneOffCents(0)
-    setContractMonths(12)
-    setInstallments(1)
-    setPaymentMethod('pix')
-    setCloserCommission(8)
-    setSdrCommission(3)
-    setStatus('pendente')
-    setNotes('')
-    setGenerateReceivables(true)
-    setAdsCents(0)
-    setOperationalCents(0)
-    setTeamHoursCents(0)
-    setFreelancersCents(0)
-    setProductionCents(0)
-    setPlatformFeeCents(0)
-    setTravelCents(0)
-    setOtherCents(0)
-  }, [open])
+
+    if (!sale) {
+      setClientId(NONE)
+      setClientName('')
+      setCompany('')
+      setSaleDate(today())
+      setLeadCreatedAt('')
+      setCloserId(NONE)
+      setSdrId(NONE)
+      setLeadSource('')
+      setModel('mrr')
+      setMrrCents(0)
+      setSetupCents(0)
+      setOneOffCents(0)
+      setContractMonths(12)
+      setInstallments(1)
+      setPaymentMethod('pix')
+      setCloserCommission(8)
+      setSdrCommission(3)
+      setStatus('pendente')
+      setNotes('')
+      setGenerateReceivables(true)
+      setAdsCents(0)
+      setOperationalCents(0)
+      setTeamHoursCents(0)
+      setFreelancersCents(0)
+      setProductionCents(0)
+      setPlatformFeeCents(0)
+      setTravelCents(0)
+      setOtherCents(0)
+      return
+    }
+
+    setClientId(sale.clientId ?? NONE)
+    setClientName(sale.clientName)
+    setCompany(sale.company ?? '')
+    setSaleDate(sale.saleDate)
+    setLeadCreatedAt(sale.leadCreatedAt ?? '')
+    setCloserId(sale.closerId ?? NONE)
+    setSdrId(sale.sdrId ?? NONE)
+    setLeadSource(sale.leadSource ?? '')
+    setModel(sale.model)
+    setMrrCents(sale.mrrCents)
+    setSetupCents(sale.setupCents)
+    // O projeto sem recorrência não é guardado num campo próprio: é o que
+    // sobra do contrato depois do setup. Reconstituir aqui evita duplicar o
+    // valor no banco e as duas versões saírem de sincronia.
+    setOneOffCents(sale.mrrCents > 0 ? 0 : Math.max(0, sale.amountCents - sale.setupCents))
+    setContractMonths(sale.contractMonths ?? 12)
+    setInstallments(sale.installments || 1)
+    setPaymentMethod(sale.paymentMethod ?? '')
+    setCloserCommission(sale.closerCommissionPercent)
+    setSdrCommission(sale.sdrCommissionPercent)
+    setStatus(sale.status)
+    setNotes(sale.notes ?? '')
+    // Refazer títulos é destrutivo: nunca vem marcado por padrão na edição.
+    setGenerateReceivables(false)
+    setAdsCents(saleCost?.adsCents ?? 0)
+    setOperationalCents(saleCost?.operationalCents ?? 0)
+    setTeamHoursCents(saleCost?.teamHoursCents ?? 0)
+    setFreelancersCents(saleCost?.freelancersCents ?? 0)
+    setProductionCents(saleCost?.productionCents ?? 0)
+    setPlatformFeeCents(saleCost?.platformFeeCents ?? 0)
+    setTravelCents(saleCost?.travelCents ?? 0)
+    setOtherCents(saleCost?.otherCents ?? 0)
+  }, [open, sale, saleCost])
 
   const hasRecurrence = model === 'mrr'
   const months = hasRecurrence ? Math.max(1, contractMonths) : 0
@@ -181,45 +238,69 @@ export function SaleDialog({
       return
     }
 
+    const fields = {
+      clientId: clientId === NONE ? null : clientId,
+      clientName: clientName.trim(),
+      company: company.trim() || null,
+      saleDate,
+      closerId: closerId === NONE ? null : closerId,
+      sdrId: sdrId === NONE ? null : sdrId,
+      leadSource: (leadSource || null) as LeadSource | null,
+      model,
+      amountCents,
+      mrrCents: hasRecurrence ? mrrCents : 0,
+      setupCents,
+      contractMonths: hasRecurrence ? months : null,
+      paymentMethod: (paymentMethod || null) as PaymentMethod | null,
+      installments: Math.max(1, installments),
+      closerCommissionPercent: closerCommission,
+      sdrCommissionPercent: sdrCommission,
+      status,
+      leadCreatedAt: leadCreatedAt || null,
+      notes: notes.trim() || null,
+    }
+
+    const costs = {
+      workspaceId: session.workspaceId,
+      adsCents,
+      commissionCents,
+      bankFeeCents: 0,
+      platformFeeCents,
+      operationalCents,
+      teamHoursCents,
+      freelancersCents,
+      productionCents,
+      travelCents,
+      otherCents,
+      notes: null,
+    }
+
     try {
+      if (sale) {
+        const result = await updateSale.mutateAsync({
+          saleId: sale.id,
+          patch: fields,
+          costs,
+          regenerateReceivables: generateReceivables,
+          firstDueDate: saleDate,
+        })
+
+        toast.success(
+          result.bills.length
+            ? `Venda atualizada — ${result.bills.length} títulos refeitos.`
+            : 'Venda atualizada.',
+        )
+        onOpenChange(false)
+        return
+      }
+
       const result = await createSale.mutateAsync({
         sale: {
           workspaceId: session.workspaceId,
-          clientId: clientId === NONE ? null : clientId,
-          clientName: clientName.trim(),
-          company: company.trim() || null,
-          saleDate,
-          closerId: closerId === NONE ? null : closerId,
-          sdrId: sdrId === NONE ? null : sdrId,
-          leadSource: (leadSource || null) as LeadSource | null,
-          model,
-          amountCents,
-          mrrCents: hasRecurrence ? mrrCents : 0,
-          setupCents,
-          contractMonths: hasRecurrence ? months : null,
-          paymentMethod: (paymentMethod || null) as PaymentMethod | null,
-          installments: Math.max(1, installments),
-          closerCommissionPercent: closerCommission,
-          sdrCommissionPercent: sdrCommission,
-          status,
-          leadCreatedAt: leadCreatedAt || null,
-          notes: notes.trim() || null,
+          ...fields,
           createdBy: session.user.id,
         },
-        costs: {
-          workspaceId: session.workspaceId,
-          adsCents,
-          commissionCents,
-          bankFeeCents: 0,
-          platformFeeCents,
-          operationalCents,
-          teamHoursCents,
-          freelancersCents,
-          productionCents,
-          travelCents,
-          otherCents,
-          notes: null,
-        },
+        costs,
         generateReceivables,
         firstDueDate: saleDate,
       })
@@ -231,7 +312,7 @@ export function SaleDialog({
       )
       onOpenChange(false)
     } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : 'Não foi possível registrar a venda.')
+      toast.error(cause instanceof Error ? cause.message : 'Não foi possível salvar a venda.')
     }
   }
 
@@ -239,10 +320,11 @@ export function SaleDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="xl">
         <DialogHeader>
-          <DialogTitle>Nova venda</DialogTitle>
+          <DialogTitle>{isEditing ? 'Editar venda' : 'Nova venda'}</DialogTitle>
           <DialogDescription>
-            Ao salvar, os títulos a receber são gerados automaticamente e todos os indicadores —
-            MRR, TCV, CAC, ROI e forecast — passam a considerar esta venda.
+            {isEditing
+              ? 'Os indicadores recalculam sozinhos ao salvar. Os títulos a receber só mudam se você pedir explicitamente abaixo.'
+              : 'Ao salvar, os títulos a receber são gerados automaticamente e todos os indicadores — MRR, TCV, CAC, ROI e forecast — passam a considerar esta venda.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -506,13 +588,21 @@ export function SaleDialog({
                   className="mt-0.5"
                 />
                 <span>
-                  <span className="block text-sm font-medium">Gerar títulos a receber</span>
+                  <span className="block text-sm font-medium">
+                    {isEditing ? 'Refazer os títulos a receber' : 'Gerar títulos a receber'}
+                  </span>
                   <span className="block text-xs text-muted-foreground">
                     {hasRecurrence
                       ? `${setupCents > 0 ? '1 título de implantação + ' : ''}${months} mensalidades`
                       : `${Math.max(1, installments)} ${installments > 1 ? 'parcelas' : 'parcela'}`}
                     , a partir de {saleDate.split('-').reverse().join('/')}.
                   </span>
+                  {isEditing && (
+                    <span className="mt-1 block text-xs text-negative">
+                      Apaga os títulos atuais desta venda e gera novos. Só é possível se nenhum
+                      deles tiver recebimento registrado.
+                    </span>
+                  )}
                 </span>
               </label>
             </TabsContent>
@@ -530,7 +620,11 @@ export function SaleDialog({
                 </div>
                 <div className="space-y-1.5">
                   <Label>Comissões (calculada)</Label>
-                  <Input value={formatMoney(commissionCents)} readOnly className="text-right tabular-nums" />
+                  <Input
+                    value={formatMoney(commissionCents)}
+                    readOnly
+                    className="text-right tabular-nums"
+                  />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="cost-platform">Taxa de plataforma</Label>
@@ -605,8 +699,8 @@ export function SaleDialog({
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={createSale.isPending}>
-              Registrar venda
+            <Button type="submit" disabled={createSale.isPending || updateSale.isPending}>
+              {isEditing ? 'Salvar alterações' : 'Registrar venda'}
             </Button>
           </DialogFooter>
         </form>

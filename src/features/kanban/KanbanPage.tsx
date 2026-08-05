@@ -4,19 +4,16 @@ import {
   DndContext,
   DragOverlay,
   PointerSensor,
+  TouchSensor,
   useDroppable,
   useSensor,
   useSensors,
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core'
-import {
-  SortableContext,
-  useSortable,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable'
+import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { CalendarClock, GripVertical, Trello, Zap } from 'lucide-react'
+import { CalendarClock, GripVertical, Plus, Trello, Zap } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { daysUntil, formatDate } from '@/lib/date'
 import { formatMoney } from '@/lib/money'
@@ -26,6 +23,7 @@ import { useSession } from '@/app/session'
 import { EmptyState, PageHeader } from '@/components/PageHeader'
 import { Avatar, AvatarFallback, initialsOf } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -35,7 +33,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { useBoardColumns, useBoards, useCards, useMoveCard, useProfileMap } from '@/hooks/data'
+import {
+  useBoardColumns,
+  useBoards,
+  useCards,
+  useMoveCard,
+  useProfileMap,
+  useProfiles,
+} from '@/hooks/data'
+import { CardDialog } from './CardDialog'
 
 /**
  * Quadro kanban.
@@ -53,11 +59,24 @@ export function KanbanPage() {
   const { data: boards = [], isLoading } = useBoards()
   const { data: columns = [] } = useBoardColumns()
   const { data: cards = [] } = useCards()
+  const { data: profiles = [] } = useProfiles()
   const profileMap = useProfileMap()
   const moveCard = useMoveCard()
 
   const [boardId, setBoardId] = React.useState<string>('')
   const [activeCard, setActiveCard] = React.useState<CardEntity | null>(null)
+  const [dialogOpen, setDialogOpen] = React.useState(false)
+  const [editing, setEditing] = React.useState<CardEntity | null>(null)
+
+  function openNewCard() {
+    setEditing(null)
+    setDialogOpen(true)
+  }
+
+  function openCard(card: CardEntity) {
+    setEditing(card)
+    setDialogOpen(true)
+  }
 
   React.useEffect(() => {
     if (!boardId && boards.length) setBoardId(boards[0]?.id ?? '')
@@ -66,7 +85,10 @@ export function KanbanPage() {
   const board = boards.find((item) => item.id === boardId)
 
   const boardColumns = React.useMemo(
-    () => columns.filter((column) => column.boardId === boardId).sort((a, b) => a.position - b.position),
+    () =>
+      columns
+        .filter((column) => column.boardId === boardId)
+        .sort((a, b) => a.position - b.position),
     [columns, boardId],
   )
 
@@ -82,9 +104,18 @@ export function KanbanPage() {
     return map
   }, [cards, boardColumns, boardId])
 
-  // Distância mínima antes de iniciar o arrasto: sem isso, um clique simples
-  // no card já dispararia drag e o quadro ficaria impossível de usar no trackpad.
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
+  /**
+   * Distância mínima antes de iniciar o arrasto: sem isso, um clique simples
+   * no card já dispararia drag e o quadro ficaria impossível de usar no
+   * trackpad — e abrir o cartão para editar deixaria de funcionar.
+   *
+   * No toque o critério é tempo, não distância: com distância, a rolagem
+   * vertical da página com o dedo em cima de um cartão viraria arrasto.
+   */
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
+  )
 
   function handleDragStart(event: DragStartEvent) {
     const card = cards.find((item) => item.id === event.active.id)
@@ -161,66 +192,78 @@ export function KanbanPage() {
         title="Quadro de tarefas"
         description={board.description ?? undefined}
         actions={
-          boards.length > 1 && (
-            <Select value={boardId} onValueChange={setBoardId}>
-              <SelectTrigger className="w-[200px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {boards.map((item) => (
-                  <SelectItem key={item.id} value={item.id}>
-                    {item.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )
+          <div className="flex items-center gap-2">
+            {boards.length > 1 && (
+              <Select value={boardId} onValueChange={setBoardId}>
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {boards.map((item) => (
+                    <SelectItem key={item.id} value={item.id}>
+                      {item.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {canManage && (
+              <Button onClick={openNewCard}>
+                <Plus /> Novo cartão
+              </Button>
+            )}
+          </div>
         }
       />
 
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {boardColumns.map((column) => {
-            const columnCards = cardsByColumn.get(column.id) ?? []
-            const total = columnCards.reduce((sum, card) => sum + (card.amountCents ?? 0), 0)
-            const overLimit = column.wipLimit != null && columnCards.length > column.wipLimit
+        {/* Faixa rolável no celular: colunas empilhadas viram uma lista longa
+            e some a leitura de fluxo que o quadro existe para dar. */}
+        <div className="-mx-4 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0 xl:overflow-visible">
+          <div className="flex snap-x snap-mandatory gap-3 xl:grid xl:grid-cols-4 xl:snap-none">
+            {boardColumns.map((column) => {
+              const columnCards = cardsByColumn.get(column.id) ?? []
+              const total = columnCards.reduce((sum, card) => sum + (card.amountCents ?? 0), 0)
+              const overLimit = column.wipLimit != null && columnCards.length > column.wipLimit
 
-            return (
-              <KanbanColumn
-                key={column.id}
-                id={column.id}
-                name={column.name}
-                count={columnCards.length}
-                totalCents={total}
-                wipLimit={column.wipLimit ?? null}
-                overLimit={overLimit}
-                hasAction={column.onDropAction === 'settle_bill'}
-                disabled={!canManage}
-              >
-                <SortableContext
-                  items={columnCards.map((card) => card.id)}
-                  strategy={verticalListSortingStrategy}
+              return (
+                <KanbanColumn
+                  key={column.id}
+                  id={column.id}
+                  name={column.name}
+                  count={columnCards.length}
+                  totalCents={total}
+                  wipLimit={column.wipLimit ?? null}
+                  overLimit={overLimit}
+                  hasAction={column.onDropAction === 'settle_bill'}
+                  disabled={!canManage}
                 >
-                  {columnCards.map((card) => (
-                    <KanbanCard
-                      key={card.id}
-                      card={card}
-                      assigneeName={
-                        card.assigneeId ? (profileMap.get(card.assigneeId)?.name ?? null) : null
-                      }
-                      disabled={!canManage}
-                    />
-                  ))}
-                </SortableContext>
+                  <SortableContext
+                    items={columnCards.map((card) => card.id)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    {columnCards.map((card) => (
+                      <KanbanCard
+                        key={card.id}
+                        card={card}
+                        assigneeName={
+                          card.assigneeId ? (profileMap.get(card.assigneeId)?.name ?? null) : null
+                        }
+                        disabled={!canManage}
+                        onOpen={canManage ? openCard : undefined}
+                      />
+                    ))}
+                  </SortableContext>
 
-                {columnCards.length === 0 && (
-                  <p className="py-6 text-center text-xs text-muted-foreground">
-                    Arraste um card para cá
-                  </p>
-                )}
-              </KanbanColumn>
-            )
-          })}
+                  {columnCards.length === 0 && (
+                    <p className="py-6 text-center text-xs text-muted-foreground">
+                      Arraste um cartão para cá
+                    </p>
+                  )}
+                </KanbanColumn>
+              )
+            })}
+          </div>
         </div>
 
         {/* Overlay: o card acompanha o cursor sem "pular" no layout original. */}
@@ -232,6 +275,15 @@ export function KanbanPage() {
           )}
         </DragOverlay>
       </DndContext>
+
+      <CardDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        boardId={boardId}
+        columns={boardColumns}
+        profiles={profiles}
+        card={editing}
+      />
     </>
   )
 }
@@ -263,7 +315,8 @@ function KanbanColumn({
     <div
       ref={setNodeRef}
       className={cn(
-        'flex min-h-[240px] flex-col rounded-lg border border-border bg-surface-1/60 p-2.5 transition-colors',
+        'flex w-[280px] shrink-0 snap-start flex-col rounded-lg border border-border bg-surface-1/60 p-2.5 transition-colors xl:w-auto',
+        'min-h-[240px]',
         isOver && 'border-foreground/30 bg-surface-2',
       )}
     >
@@ -296,10 +349,12 @@ function KanbanCard({
   card,
   assigneeName,
   disabled,
+  onOpen,
 }: {
   card: CardEntity
   assigneeName: string | null
   disabled: boolean
+  onOpen?: (card: CardEntity) => void
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: card.id,
@@ -311,6 +366,9 @@ function KanbanCard({
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={isDragging ? 'opacity-40' : undefined}
+      // Clicar abre; arrastar move. Os dois convivem porque o sensor só
+      // dispara depois de 6px de movimento (ou de um toque longo no celular).
+      onClick={() => onOpen?.(card)}
       {...attributes}
       {...listeners}
     >

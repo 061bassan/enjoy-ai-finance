@@ -1,12 +1,9 @@
 import * as React from 'react'
-import { Handshake, Plus, Search } from 'lucide-react'
+import { toast } from 'sonner'
+import { Handshake, MoreHorizontal, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import { formatDate } from '@/lib/date'
 import { formatMoney, formatMultiple, formatNumber, formatPercent } from '@/lib/money'
-import {
-  LEAD_SOURCE_LABEL,
-  SALE_MODEL_LABEL,
-  SALE_STATUS_LABEL,
-} from '@/data/enums'
+import { LEAD_SOURCE_LABEL, SALE_MODEL_LABEL, SALE_STATUS_LABEL } from '@/data/enums'
 import type { Profile, Sale, SaleStatus } from '@/data/types'
 import { cn } from '@/lib/cn'
 import {
@@ -22,9 +19,17 @@ import { usePeriod } from '@/app/period'
 import { useSession } from '@/app/session'
 import { KpiCard, KpiGrid } from '@/components/KpiCard'
 import { EmptyState, PageHeader } from '@/components/PageHeader'
+import { ShowMore, useVisibleCount } from '@/components/ShowMore'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -41,7 +46,15 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { useClients, useProfileMap, useProfiles, useSaleCosts, useSales } from '@/hooks/data'
+import {
+  useClients,
+  useDeleteSale,
+  useProfileMap,
+  useProfiles,
+  useSaleCosts,
+  useSales,
+} from '@/hooks/data'
+import { canManageSale } from '@/data/rules/permissions'
 import { SaleDialog } from './SaleDialog'
 
 const ALL = '__all__'
@@ -182,7 +195,7 @@ function buildColumns(profileMap: Map<string, Profile>): SaleColumn[] {
 
 export function SalesPage() {
   const { range, comparisonRange } = usePeriod()
-  const { session, allow } = useSession()
+  const { session, role, allow } = useSession()
 
   const canSeeAll = allow('manage:sales:all') || allow('view:sales:all')
   const canCreate = allow('manage:sales:all') || allow('manage:sales:own')
@@ -192,11 +205,14 @@ export function SalesPage() {
   const { data: clients = [] } = useClients()
   const { data: profiles = [] } = useProfiles()
   const profileMap = useProfileMap()
+  const deleteSale = useDeleteSale()
 
   const [search, setSearch] = React.useState('')
   const [statusFilter, setStatusFilter] = React.useState<SaleStatus | typeof ALL>(ALL)
   const [closerFilter, setCloserFilter] = React.useState<string>(ALL)
   const [dialogOpen, setDialogOpen] = React.useState(false)
+  const [editing, setEditing] = React.useState<Sale | null>(null)
+  const [deleting, setDeleting] = React.useState<Sale | null>(null)
 
   const { isVisible } = useCustomization()
 
@@ -222,7 +238,9 @@ export function SalesPage() {
   const visible = React.useMemo(() => {
     if (canSeeAll) return sales
     const me = session?.user.id
-    return sales.filter((sale) => sale.closerId === me || sale.sdrId === me || sale.createdBy === me)
+    return sales.filter(
+      (sale) => sale.closerId === me || sale.sdrId === me || sale.createdBy === me,
+    )
   }, [sales, canSeeAll, session?.user.id])
 
   const inPeriod = React.useMemo(
@@ -255,6 +273,46 @@ export function SalesPage() {
       )
       .sort((a, b) => b.saleDate.localeCompare(a.saleDate))
   }, [inPeriod, effectiveStatus, effectiveCloser, effectiveSearch])
+
+  /**
+   * Quem pode mexer nesta venda.
+   *
+   * Mesma regra da leitura: closer e SDR mexem no que é deles. A checagem é
+   * por linha, e não por tela, porque `manage:sales:own` só faz sentido diante
+   * de um registro concreto — sem isso, um closer veria o botão em vendas de
+   * colegas e descobriria a restrição só na mensagem de erro.
+   */
+  function canEditSale(sale: Sale) {
+    const me = session?.user.id
+    const mine = sale.closerId === me || sale.sdrId === me || sale.createdBy === me
+    return canManageSale(role, mine)
+  }
+
+  const showActions = filtered.some((sale) => canEditSale(sale))
+
+  // Os KPIs acima somam o período inteiro; o corte é só de exibição.
+  const pagination = useVisibleCount(filtered.length)
+
+  function openNew() {
+    setEditing(null)
+    setDialogOpen(true)
+  }
+
+  function openEdit(sale: Sale) {
+    setEditing(sale)
+    setDialogOpen(true)
+  }
+
+  async function confirmDelete() {
+    if (!deleting || !session) return
+    try {
+      await deleteSale.mutateAsync({ saleId: deleting.id, actorId: session.user.id })
+      toast.success('Venda excluída.')
+      setDeleting(null)
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : 'Não foi possível excluir a venda.')
+    }
+  }
 
   const showFilters =
     isVisible('sales', 'filters', 'search') ||
@@ -299,7 +357,7 @@ export function SalesPage() {
         }
         actions={
           canCreate && (
-            <Button onClick={() => setDialogOpen(true)}>
+            <Button onClick={openNew}>
               <Plus /> Nova venda
             </Button>
           )
@@ -310,46 +368,73 @@ export function SalesPage() {
         {/* Cada cartão declara o próprio id para que a personalização possa
             escondê-lo. Esconder muda só o que aparece: o cálculo acima roda
             igual, então nenhum outro número muda de valor por causa disso. */}
-        {kpi('count', <KpiCard
-          label="Vendas"
-          value={formatNumber(summary.count)}
-          variation={variation(summary.count, previousSummary.count)}
-        />)}
-        {kpi('total', <KpiCard
-          label="Valor vendido"
-          value={formatMoney(summary.totalCents)}
-          variation={variation(summary.totalCents, previousSummary.totalCents)}
-        />)}
-        {kpi('ticket', <KpiCard
-          label="Ticket médio"
-          value={formatMoney(summary.averageTicketCents)}
-          variation={variation(summary.averageTicketCents, previousSummary.averageTicketCents)}
-        />)}
+        {kpi(
+          'count',
+          <KpiCard
+            label="Vendas"
+            value={formatNumber(summary.count)}
+            variation={variation(summary.count, previousSummary.count)}
+          />,
+        )}
+        {kpi(
+          'total',
+          <KpiCard
+            label="Valor vendido"
+            value={formatMoney(summary.totalCents)}
+            variation={variation(summary.totalCents, previousSummary.totalCents)}
+          />,
+        )}
+        {kpi(
+          'ticket',
+          <KpiCard
+            label="Ticket médio"
+            value={formatMoney(summary.averageTicketCents)}
+            variation={variation(summary.averageTicketCents, previousSummary.averageTicketCents)}
+          />,
+        )}
         {kpi('mrr', <KpiCard label="MRR vendido" value={formatMoney(summary.mrrCents)} />)}
-        {kpi('setup', <KpiCard label="Implantação" value={formatMoney(summary.setupRevenueCents)} />)}
+        {kpi(
+          'setup',
+          <KpiCard label="Implantação" value={formatMoney(summary.setupRevenueCents)} />,
+        )}
         {kpi('largest', <KpiCard label="Maior venda" value={formatMoney(summary.largestCents)} />)}
-        {kpi('smallest', <KpiCard label="Menor venda" value={formatMoney(summary.smallestCents)} />)}
-        {kpi('profit', <KpiCard
-          label="Lucro das vendas"
-          value={formatMoney(economics.netProfit)}
-          secondary={economics.margin != null ? formatPercent(economics.margin) : undefined}
-        />)}
-        {kpi('cac', <KpiCard
-          label="CAC médio"
-          value={formatMoney(economics.averageCac)}
-          invertVariation
-          hint="Anúncios + comissões + deslocamento, dividido pelo número de vendas do período."
-        />)}
-        {kpi('roi', <KpiCard
-          label="ROI"
-          value={economics.roi != null ? formatMultiple(economics.roi) : '—'}
-          hint="Lucro líquido das vendas dividido pelo custo total atribuído a elas."
-        />)}
-        {kpi('daysToClose', <KpiCard
-          label="Tempo de fechamento"
-          value={summary.averageDaysToClose != null ? `${summary.averageDaysToClose} dias` : '—'}
-          invertVariation
-        />)}
+        {kpi(
+          'smallest',
+          <KpiCard label="Menor venda" value={formatMoney(summary.smallestCents)} />,
+        )}
+        {kpi(
+          'profit',
+          <KpiCard
+            label="Lucro das vendas"
+            value={formatMoney(economics.netProfit)}
+            secondary={economics.margin != null ? formatPercent(economics.margin) : undefined}
+          />,
+        )}
+        {kpi(
+          'cac',
+          <KpiCard
+            label="CAC médio"
+            value={formatMoney(economics.averageCac)}
+            invertVariation
+            hint="Anúncios + comissões + deslocamento, dividido pelo número de vendas do período."
+          />,
+        )}
+        {kpi(
+          'roi',
+          <KpiCard
+            label="ROI"
+            value={economics.roi != null ? formatMultiple(economics.roi) : '—'}
+            hint="Lucro líquido das vendas dividido pelo custo total atribuído a elas."
+          />,
+        )}
+        {kpi(
+          'daysToClose',
+          <KpiCard
+            label="Tempo de fechamento"
+            value={summary.averageDaysToClose != null ? `${summary.averageDaysToClose} dias` : '—'}
+            invertVariation
+          />,
+        )}
       </KpiGrid>
 
       {showFilters && (
@@ -416,7 +501,7 @@ export function SalesPage() {
               description="Ajuste o período no topo da tela ou registre uma nova venda."
               action={
                 canCreate && (
-                  <Button onClick={() => setDialogOpen(true)}>
+                  <Button onClick={openNew}>
                     <Plus /> Nova venda
                   </Button>
                 )
@@ -436,10 +521,14 @@ export function SalesPage() {
                     {column.label}
                   </TableHead>
                 ))}
+                {/* A coluna de ações fica fora do catálogo de personalização:
+                    esconder o caminho de correção deixaria uma venda errada
+                    sem conserto, e "limpar a tela" não pode custar isso. */}
+                {showActions && <TableHead className="w-10" />}
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((sale) => {
+              {filtered.slice(0, pagination.count).map((sale) => {
                 const eco = saleEconomics(sale, costsBySale.get(sale.id))
                 return (
                   <TableRow key={sale.id}>
@@ -452,6 +541,31 @@ export function SalesPage() {
                         {column.render(sale, eco)}
                       </TableCell>
                     ))}
+                    {showActions && (
+                      <TableCell>
+                        {canEditSale(sale) && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                aria-label={`Ações da venda de ${sale.clientName}`}
+                              >
+                                <MoreHorizontal />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onSelect={() => openEdit(sale)}>
+                                <Pencil /> Editar
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onSelect={() => setDeleting(sale)}>
+                                <Trash2 /> Excluir
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+                      </TableCell>
+                    )}
                   </TableRow>
                 )
               })}
@@ -460,11 +574,37 @@ export function SalesPage() {
         )}
       </Card>
 
+      <ShowMore
+        total={filtered.length}
+        count={pagination.count}
+        onShowMore={pagination.showMore}
+        noun="venda"
+        nounPlural="vendas"
+      />
+
       <SaleDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         clients={clients}
         profiles={profiles}
+        sale={editing}
+        saleCost={editing ? (costsBySale.get(editing.id) ?? null) : null}
+      />
+
+      <ConfirmDialog
+        open={deleting != null}
+        onOpenChange={(open) => {
+          if (!open) setDeleting(null)
+        }}
+        title="Excluir esta venda?"
+        description={
+          deleting
+            ? `A venda de ${deleting.clientName} sai do sistema junto com os títulos a receber que ela gerou. Títulos já recebidos bloqueiam a exclusão — nesse caso, estorne a baixa primeiro. O cliente e os lançamentos de caixa permanecem.`
+            : undefined
+        }
+        confirmLabel="Excluir venda"
+        destructive
+        onConfirm={confirmDelete}
       />
     </>
   )

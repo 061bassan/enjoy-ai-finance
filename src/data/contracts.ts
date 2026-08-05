@@ -167,6 +167,46 @@ export interface Operations {
     firstDueDate?: string
   }): Promise<{ sale: Sale; bills: Bill[] }>
 
+  /**
+   * Altera uma venda já registrada — e, se pedido, refaz os títulos dela.
+   *
+   * Existe porque criar sem poder corrigir não é um fluxo: a venda é digitada
+   * às pressas no fim da reunião, e o valor, o closer ou o modelo saem
+   * errados com frequência. Sem edição, o único caminho era apagar e lançar
+   * de novo, o que descarta o histórico e os títulos já baixados.
+   *
+   * `regenerateReceivables` é opt-in porque refazer títulos é destrutivo: os
+   * antigos deixam de existir. A operação **recusa** refazer quando algum
+   * título da venda já tem baixa — o dinheiro que entrou no caixa não pode
+   * ficar órfão de título. Nesse caso, desfaça as baixas primeiro.
+   */
+  updateSaleWithReceivables(input: {
+    saleId: Id
+    patch: PatchEntity<Sale>
+    costs?: Omit<NewEntity<SaleCost>, 'saleId'>
+    regenerateReceivables: boolean
+    firstDueDate?: string
+  }): Promise<{ sale: Sale; bills: Bill[] }>
+
+  /**
+   * Apaga a venda, os custos e os títulos que ela gerou.
+   *
+   * Recusa quando há título com baixa registrada: apagar deixaria a entrada
+   * no caixa sem origem, e o caixa é a única coisa no sistema que não pode
+   * mentir. Um lead convertido volta para negociação — a invariante "lead
+   * ganho tem venda atrás" continua valendo depois da exclusão.
+   */
+  deleteSale(input: { saleId: Id; actorId: Id }): Promise<void>
+
+  /**
+   * Apaga um lançamento, respeitando o que ele representa.
+   *
+   * Transferência apaga as duas pernas juntas — deixar uma sozinha inventaria
+   * receita numa conta e despesa em nenhuma. Transação vinda de baixa de
+   * título é recusada: o caminho é estornar a baixa.
+   */
+  deleteTransaction(transactionId: Id): Promise<void>
+
   /** Materializa os títulos de uma regra recorrente até a data limite. */
   generateBillsFromRule(ruleId: Id, throughDate: string): Promise<Bill[]>
 

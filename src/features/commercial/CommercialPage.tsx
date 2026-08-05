@@ -9,8 +9,9 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { Plus } from 'lucide-react'
+import { MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react'
 import { data } from '@/data'
+import type { CommercialDay } from '@/data/types'
 import { formatDate, today } from '@/lib/date'
 import { formatMoney, formatNumber, formatPercent, formatMultiple } from '@/lib/money'
 import {
@@ -20,7 +21,7 @@ import {
   daysInPeriod,
   totalizeCommercial,
 } from '@/domain/commercial'
-import { conversionRate, leadsInPeriod } from '@/domain/leads'
+import { leadsInPeriod } from '@/domain/leads'
 import { activeSales } from '@/domain/sales'
 import { usePeriod } from '@/app/period'
 import { useSession } from '@/app/session'
@@ -51,7 +52,21 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { ChartFrame, ChartTooltip, chartColor } from '@/components/charts/primitives'
-import { useCommercialDays, useCreate, useLeads, useSales } from '@/hooks/data'
+import {
+  useCommercialDays,
+  useCreate,
+  useLeads,
+  useRemove,
+  useSales,
+  useUpdate,
+} from '@/hooks/data'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 export function CommercialPage() {
   const { range } = usePeriod()
@@ -61,7 +76,11 @@ export function CommercialPage() {
   const { data: days = [] } = useCommercialDays()
   const { data: sales = [] } = useSales()
   const { data: leads = [] } = useLeads()
+  const removeDay = useRemove('commercialDays', data.commercialDays)
+
   const [dialogOpen, setDialogOpen] = React.useState(false)
+  const [editing, setEditing] = React.useState<CommercialDay | null>(null)
+  const [deleting, setDeleting] = React.useState<CommercialDay | null>(null)
 
   const metrics = React.useMemo(() => {
     const period = daysInPeriod(days, range)
@@ -72,28 +91,13 @@ export function CommercialPage() {
     const activePeriodSales = activeSales(periodSales)
     const periodLeads = leadsInPeriod(leads, range)
 
-    /**
-     * A conversão que o funil sempre teve lugar para mostrar, mas nunca
-     * conseguiu calcular: vendas ÷ leads.
-     *
-     * As duas pontas agora são fatos registrados — a venda vem da tela de
-     * Vendas, o lead vem do CRM. Antes, os dois lados saíam do mesmo
-     * formulário digitado, então o número só dizia se a pessoa tinha somado
-     * direito no fim do dia.
-     */
-    const conversion = conversionRate({
-      leads,
-      sales,
-      range,
-      diaryLeadCount: totals.leads,
-    })
-
     return {
       period,
       totals,
-      conversion,
       leadCount: periodLeads.length,
-      kpis: commercialKpis(totals, periodSales),
+      // O win rate agora é vendas ÷ leads, então precisa do CRM: sem o
+      // `leadCount` ele cairia no total digitado no diário sem necessidade.
+      kpis: commercialKpis(totals, periodSales, { leadCount: periodLeads.length }),
       funnel: buildFunnel(totals, {
         leadCount: periodLeads.length,
         salesCount: activePeriodSales.length,
@@ -109,7 +113,12 @@ export function CommercialPage() {
         description="O que a equipe fez por dia e quanto custa cada etapa até fechar um cliente."
         actions={
           canManage && (
-            <Button onClick={() => setDialogOpen(true)}>
+            <Button
+              onClick={() => {
+                setEditing(null)
+                setDialogOpen(true)
+              }}
+            >
               <Plus /> Registrar dia
             </Button>
           )
@@ -117,24 +126,28 @@ export function CommercialPage() {
       />
 
       <KpiGrid className="mb-4">
+        {/* Win rate é o primeiro cartão porque é a pergunta da tela. Havia
+            também um "Conversão lead → venda" logo aqui: mesma conta, outro
+            nome. Dois cartões com o mesmo número e rótulos diferentes fazem
+            quem lê procurar a diferença que não existe. */}
         <KpiCard
-          label="Conversão lead → venda"
-          value={metrics.conversion.ratio != null ? formatPercent(metrics.conversion.ratio) : '—'}
-          secondary={`${formatNumber(metrics.conversion.saleCount)} vendas ÷ ${formatNumber(
-            metrics.conversion.leadCount,
+          label="Win rate"
+          value={metrics.kpis.winRate != null ? formatPercent(metrics.kpis.winRate) : '—'}
+          secondary={`${formatNumber(metrics.kpis.saleCount)} vendas ÷ ${formatNumber(
+            metrics.kpis.leadCount,
           )} leads`}
           hint={
-            metrics.conversion.origin === 'crm'
+            metrics.kpis.winRateOrigin === 'crm'
               ? 'Vendas registradas no período divididas pelos leads que entraram no CRM. Os dois números são apurados — nenhum é digitado.'
-              : metrics.conversion.origin === 'diario'
-                ? 'Os leads vêm do registro diário abaixo, e as vendas da tela de Vendas. Cadastre os leads em Comercial → Leads para o número deixar de depender de digitação.'
+              : metrics.kpis.winRateOrigin === 'diario'
+                ? 'Os leads vêm do registro diário abaixo, e as vendas da tela de Vendas. Cadastre os leads em Leads para o número deixar de depender de digitação.'
                 : 'Sem leads no período — não há denominador para a conta.'
           }
         />
         <KpiCard
           label="Leads"
-          value={formatNumber(metrics.conversion.leadCount)}
-          secondary={metrics.leadCount > 0 ? 'do CRM' : 'do registro diário'}
+          value={formatNumber(metrics.kpis.leadCount)}
+          secondary={metrics.kpis.winRateOrigin === 'crm' ? 'do CRM' : 'do registro diário'}
         />
         <KpiCard label="Calls" value={formatNumber(metrics.totals.calls)} />
         <KpiCard label="Reuniões" value={formatNumber(metrics.totals.meetings)} />
@@ -146,9 +159,13 @@ export function CommercialPage() {
         <KpiCard label="Propostas enviadas" value={formatNumber(metrics.totals.proposalsSent)} />
         <KpiCard label="Contratos assinados" value={formatNumber(metrics.totals.contractsSigned)} />
         <KpiCard
-          label="Win rate"
-          value={metrics.kpis.winRate != null ? formatPercent(metrics.kpis.winRate) : '—'}
-          hint="Propostas aprovadas sobre o total de propostas decididas (aprovadas + recusadas)."
+          label="Aprovação de propostas"
+          value={
+            metrics.kpis.proposalApprovalRate != null
+              ? formatPercent(metrics.kpis.proposalApprovalRate)
+              : '—'
+          }
+          hint="Propostas aprovadas sobre o total de propostas decididas (aprovadas + recusadas). Mede a qualidade da proposta, não a do funil inteiro."
         />
         <KpiCard
           label="Investimento comercial"
@@ -311,6 +328,7 @@ export function CommercialPage() {
                 <TableHead data-numeric className="hidden xl:table-cell">
                   Investimento
                 </TableHead>
+                {canManage && <TableHead className="w-10" />}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -332,10 +350,7 @@ export function CommercialPage() {
                     <TableCell data-numeric className="hidden font-medium lg:table-cell">
                       {day.contractsSigned}
                     </TableCell>
-                    <TableCell
-                      data-numeric
-                      className="hidden text-muted-foreground xl:table-cell"
-                    >
+                    <TableCell data-numeric className="hidden text-muted-foreground xl:table-cell">
                       {formatMoney(
                         day.adsInvestmentCents +
                           day.sdrInvestmentCents +
@@ -347,6 +362,34 @@ export function CommercialPage() {
                           day.softwareCents,
                       )}
                     </TableCell>
+                    {canManage && (
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              aria-label={`Ações do dia ${formatDate(day.date)}`}
+                            >
+                              <MoreHorizontal />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onSelect={() => {
+                                setEditing(day)
+                                setDialogOpen(true)
+                              }}
+                            >
+                              <Pencil /> Editar
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onSelect={() => setDeleting(day)}>
+                              <Trash2 /> Excluir
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
             </TableBody>
@@ -354,7 +397,32 @@ export function CommercialPage() {
         )}
       </Card>
 
-      <CommercialDayDialog open={dialogOpen} onOpenChange={setDialogOpen} />
+      <CommercialDayDialog open={dialogOpen} onOpenChange={setDialogOpen} day={editing} />
+
+      <ConfirmDialog
+        open={deleting != null}
+        onOpenChange={(open) => {
+          if (!open) setDeleting(null)
+        }}
+        title="Excluir este registro?"
+        description={
+          deleting
+            ? `Os números de ${formatDate(deleting.date)} saem do funil, do CPL e do CAC do período.`
+            : undefined
+        }
+        confirmLabel="Excluir"
+        destructive
+        onConfirm={async () => {
+          if (!deleting) return
+          try {
+            await removeDay.mutateAsync(deleting.id)
+            toast.success('Registro excluído.')
+            setDeleting(null)
+          } catch (cause) {
+            toast.error(cause instanceof Error ? cause.message : 'Não foi possível excluir.')
+          }
+        }}
+      />
     </>
   )
 }
@@ -369,12 +437,17 @@ export function CommercialPage() {
 function CommercialDayDialog({
   open,
   onOpenChange,
+  day = null,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Quando presente, corrige o registro em vez de criar outro. */
+  day?: CommercialDay | null
 }) {
   const { session } = useSession()
   const create = useCreate('commercialDays', data.commercialDays)
+  const update = useUpdate('commercialDays', data.commercialDays)
+  const isEditing = day != null
 
   const [date, setDate] = React.useState(today())
   const [counts, setCounts] = React.useState({
@@ -402,30 +475,30 @@ function CommercialDayDialog({
 
   React.useEffect(() => {
     if (!open) return
-    setDate(today())
+    setDate(day?.date ?? today())
     setCounts({
-      leads: 0,
-      calls: 0,
-      meetings: 0,
-      noShows: 0,
-      proposalsSent: 0,
-      proposalsApproved: 0,
-      proposalsRejected: 0,
-      followUps: 0,
-      contractsSent: 0,
-      contractsSigned: 0,
+      leads: day?.leads ?? 0,
+      calls: day?.calls ?? 0,
+      meetings: day?.meetings ?? 0,
+      noShows: day?.noShows ?? 0,
+      proposalsSent: day?.proposalsSent ?? 0,
+      proposalsApproved: day?.proposalsApproved ?? 0,
+      proposalsRejected: day?.proposalsRejected ?? 0,
+      followUps: day?.followUps ?? 0,
+      contractsSent: day?.contractsSent ?? 0,
+      contractsSigned: day?.contractsSigned ?? 0,
     })
     setInvestment({
-      adsInvestmentCents: 0,
-      sdrInvestmentCents: 0,
-      closerInvestmentCents: 0,
-      toolsCents: 0,
-      crmCents: 0,
-      phoneCents: 0,
-      internetCents: 0,
-      softwareCents: 0,
+      adsInvestmentCents: day?.adsInvestmentCents ?? 0,
+      sdrInvestmentCents: day?.sdrInvestmentCents ?? 0,
+      closerInvestmentCents: day?.closerInvestmentCents ?? 0,
+      toolsCents: day?.toolsCents ?? 0,
+      crmCents: day?.crmCents ?? 0,
+      phoneCents: day?.phoneCents ?? 0,
+      internetCents: day?.internetCents ?? 0,
+      softwareCents: day?.softwareCents ?? 0,
     })
-  }, [open])
+  }, [open, day])
 
   const COUNT_FIELDS: { key: keyof typeof counts; label: string }[] = [
     { key: 'leads', label: 'Leads' },
@@ -461,16 +534,24 @@ function CommercialDayDialog({
     }
 
     try {
-      await create.mutateAsync({
-        workspaceId: session.workspaceId,
-        date,
-        ownerId: null,
-        ...counts,
-        ...investment,
-        notes: null,
-        createdBy: session.user.id,
-      })
-      toast.success('Dia registrado.')
+      if (day) {
+        await update.mutateAsync({
+          id: day.id,
+          patch: { date, ...counts, ...investment },
+        })
+        toast.success('Registro atualizado.')
+      } else {
+        await create.mutateAsync({
+          workspaceId: session.workspaceId,
+          date,
+          ownerId: null,
+          ...counts,
+          ...investment,
+          notes: null,
+          createdBy: session.user.id,
+        })
+        toast.success('Dia registrado.')
+      }
       onOpenChange(false)
     } catch {
       // A chave única (workspace + data + responsável) evita duplicar o dia.
@@ -482,7 +563,9 @@ function CommercialDayDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="lg">
         <DialogHeader>
-          <DialogTitle>Registrar dia comercial</DialogTitle>
+          <DialogTitle>
+            {isEditing ? 'Editar dia comercial' : 'Registrar dia comercial'}
+          </DialogTitle>
           <DialogDescription>
             Estes números alimentam o funil, o CPL, o custo por reunião e o CAC.
           </DialogDescription>
@@ -491,12 +574,7 @@ function CommercialDayDialog({
         <form onSubmit={submit} className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="commercial-date">Data</Label>
-            <DateField
-              id="commercial-date"
-              value={date}
-              onChange={setDate}
-              className="sm:w-48"
-            />
+            <DateField id="commercial-date" value={date} onChange={setDate} className="sm:w-48" />
           </div>
 
           <Separator />
@@ -549,8 +627,8 @@ function CommercialDayDialog({
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={create.isPending}>
-              Registrar
+            <Button type="submit" disabled={create.isPending || update.isPending}>
+              {isEditing ? 'Salvar alterações' : 'Registrar'}
             </Button>
           </DialogFooter>
         </form>

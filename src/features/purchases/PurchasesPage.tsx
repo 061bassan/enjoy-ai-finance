@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { toast } from 'sonner'
-import { Plus, ShoppingBag } from 'lucide-react'
+import { MoreHorizontal, Pencil, Plus, ShoppingBag, Trash2 } from 'lucide-react'
 import { data } from '@/data'
 import { formatDate, monthsInRange, today } from '@/lib/date'
 import { formatMoney } from '@/lib/money'
@@ -11,10 +11,11 @@ import {
   PURCHASE_STATUS_LABEL,
   optionsFrom,
 } from '@/data/enums'
-import type { CostCenter, PurchaseStatus } from '@/data/types'
+import type { CostCenter, PurchaseGoal, PurchaseStatus } from '@/data/types'
 import { purchaseAffordability, sortPurchases } from '@/domain/goals'
 import { monthlySeries, totalCash } from '@/domain/finance'
 import { useSession } from '@/app/session'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { DateField } from '@/components/DateField'
 import { EmptyState, PageHeader } from '@/components/PageHeader'
 import { MoneyInput } from '@/components/MoneyInput'
@@ -29,6 +30,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Input, Textarea } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Progress } from '@/components/ui/progress'
@@ -39,7 +46,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { useAccounts, useCreate, usePurchaseGoals, useTransactions, useUpdate } from '@/hooks/data'
+import {
+  useAccounts,
+  useCreate,
+  usePurchaseGoals,
+  useRemove,
+  useTransactions,
+  useUpdate,
+} from '@/hooks/data'
 
 /**
  * Metas de compra.
@@ -57,7 +71,10 @@ export function PurchasesPage() {
   const { data: accounts = [] } = useAccounts()
 
   const update = useUpdate('purchaseGoals', data.purchaseGoals)
+  const removePurchase = useRemove('purchaseGoals', data.purchaseGoals)
   const [dialogOpen, setDialogOpen] = React.useState(false)
+  const [editing, setEditing] = React.useState<PurchaseGoal | null>(null)
+  const [deleting, setDeleting] = React.useState<PurchaseGoal | null>(null)
 
   const context = React.useMemo(() => {
     const cash = totalCash(accounts, transactions)
@@ -102,7 +119,12 @@ export function PurchasesPage() {
         description="O que você quer comprar, por ordem de urgência, e quando isso cabe no caixa."
         actions={
           canManage && (
-            <Button onClick={() => setDialogOpen(true)}>
+            <Button
+              onClick={() => {
+                setEditing(null)
+                setDialogOpen(true)
+              }}
+            >
               <Plus /> Nova meta de compra
             </Button>
           )
@@ -146,7 +168,12 @@ export function PurchasesPage() {
           description="Cadastre equipamentos, licenças ou qualquer aquisição planejada."
           action={
             canManage && (
-              <Button onClick={() => setDialogOpen(true)}>
+              <Button
+                onClick={() => {
+                  setEditing(null)
+                  setDialogOpen(true)
+                }}
+              >
                 <Plus /> Nova meta de compra
               </Button>
             )
@@ -161,15 +188,42 @@ export function PurchasesPage() {
                   <h3 className="truncate text-sm font-medium">{row.purchase.name}</h3>
                   <p className="mt-0.5 text-xs text-muted-foreground">
                     {PRIORITY_LABEL[row.purchase.priority]}
-                    {row.purchase.costCenter &&
-                      ` · ${COST_CENTER_LABEL[row.purchase.costCenter]}`}
+                    {row.purchase.costCenter && ` · ${COST_CENTER_LABEL[row.purchase.costCenter]}`}
                   </p>
                 </div>
-                {row.affordableNow ? (
-                  <Badge variant="positive">Cabe no caixa</Badge>
-                ) : (
-                  <Badge variant="muted">{PURCHASE_STATUS_LABEL[row.purchase.status]}</Badge>
-                )}
+                <div className="flex shrink-0 items-center gap-1">
+                  {row.affordableNow ? (
+                    <Badge variant="positive">Cabe no caixa</Badge>
+                  ) : (
+                    <Badge variant="muted">{PURCHASE_STATUS_LABEL[row.purchase.status]}</Badge>
+                  )}
+                  {canManage && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`Ações de ${row.purchase.name}`}
+                        >
+                          <MoreHorizontal />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onSelect={() => {
+                            setEditing(row.purchase)
+                            setDialogOpen(true)
+                          }}
+                        >
+                          <Pencil /> Editar
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => setDeleting(row.purchase)}>
+                          <Trash2 /> Excluir
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+                </div>
               </div>
 
               {row.purchase.description && (
@@ -244,6 +298,28 @@ export function PurchasesPage() {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         workspaceId={session?.workspaceId ?? ''}
+        purchase={editing}
+      />
+
+      <ConfirmDialog
+        open={deleting != null}
+        onOpenChange={(open) => {
+          if (!open) setDeleting(null)
+        }}
+        title="Excluir esta meta de compra?"
+        description="A meta some da lista. Nenhum lançamento de caixa é afetado — a meta é só planejamento."
+        confirmLabel="Excluir"
+        destructive
+        onConfirm={async () => {
+          if (!deleting) return
+          try {
+            await removePurchase.mutateAsync(deleting.id)
+            toast.success('Meta de compra excluída.')
+            setDeleting(null)
+          } catch (cause) {
+            toast.error(cause instanceof Error ? cause.message : 'Não foi possível excluir.')
+          }
+        }}
       />
     </>
   )
@@ -262,12 +338,16 @@ function PurchaseDialog({
   open,
   onOpenChange,
   workspaceId,
+  purchase = null,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   workspaceId: string
+  /** Quando presente, corrige a meta em vez de criar outra. */
+  purchase?: PurchaseGoal | null
 }) {
   const create = useCreate('purchaseGoals', data.purchaseGoals)
+  const update = useUpdate('purchaseGoals', data.purchaseGoals)
 
   const [name, setName] = React.useState('')
   const [description, setDescription] = React.useState('')
@@ -279,14 +359,14 @@ function PurchaseDialog({
 
   React.useEffect(() => {
     if (!open) return
-    setName('')
-    setDescription('')
-    setEstimatedCents(0)
-    setSavedCents(0)
-    setPriority(3)
-    setTargetDate('')
-    setCostCenter('')
-  }, [open])
+    setName(purchase?.name ?? '')
+    setDescription(purchase?.description ?? '')
+    setEstimatedCents(purchase?.estimatedCents ?? 0)
+    setSavedCents(purchase?.savedCents ?? 0)
+    setPriority(purchase?.priority ?? 3)
+    setTargetDate(purchase?.targetDate ?? '')
+    setCostCenter(purchase?.costCenter ?? '')
+  }, [open, purchase])
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
@@ -299,16 +379,27 @@ function PurchaseDialog({
       return
     }
 
-    await create.mutateAsync({
-      workspaceId,
+    const fields = {
       name: name.trim(),
       description: description.trim() || null,
       estimatedCents,
       savedCents,
       priority,
       targetDate: targetDate || null,
-      productUrl: null,
       costCenter: (costCenter || null) as CostCenter | null,
+    }
+
+    if (purchase) {
+      await update.mutateAsync({ id: purchase.id, patch: fields })
+      toast.success('Meta de compra atualizada.')
+      onOpenChange(false)
+      return
+    }
+
+    await create.mutateAsync({
+      workspaceId,
+      ...fields,
+      productUrl: null,
       status: 'wishlist',
       boughtAt: null,
       transactionId: null,

@@ -1,16 +1,17 @@
 import * as React from 'react'
 import { toast } from 'sonner'
-import { Flag, Plus, Target, TrendingUp } from 'lucide-react'
+import { Flag, MoreHorizontal, Pencil, Plus, Target, Trash2, TrendingUp } from 'lucide-react'
 import { data } from '@/data'
 import { formatDate, formatMonthLong, monthKey, rangeOfMonth, today } from '@/lib/date'
 import { formatMoney, formatNumber, formatPercent } from '@/lib/money'
 import { GOAL_TYPE_LABEL, optionsFrom } from '@/data/enums'
-import type { GoalType } from '@/data/types'
+import type { Goal, GoalType, MonthlyTarget } from '@/data/types'
 import { goalProgress, monthlyTargetProgress, requiredMonthlyContribution } from '@/domain/goals'
 import { grossRevenue, inRange, netMargin, netProfit } from '@/domain/finance'
 import { summarizeSales } from '@/domain/sales'
 import { daysInPeriod, totalizeCommercial } from '@/domain/commercial'
 import { useSession } from '@/app/session'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { DateField, MonthField } from '@/components/DateField'
 import { EmptyState, PageHeader } from '@/components/PageHeader'
 import { MoneyInput } from '@/components/MoneyInput'
@@ -25,6 +26,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Progress } from '@/components/ui/progress'
@@ -44,8 +51,10 @@ import {
   useGoalContributions,
   useGoals,
   useMonthlyTargets,
+  useRemove,
   useSales,
   useTransactions,
+  useUpdate,
 } from '@/hooks/data'
 
 export function GoalsPage() {
@@ -100,6 +109,8 @@ function MonthlyTargetsTab() {
   const currentMonth = `${today().slice(0, 7)}-01`
   const [selectedMonth, setSelectedMonth] = React.useState(currentMonth)
   const [targetDialogOpen, setTargetDialogOpen] = React.useState(false)
+  const [deletingTarget, setDeletingTarget] = React.useState(false)
+  const removeTarget = useRemove('monthlyTargets', data.monthlyTargets)
 
   const target = targets.find((row) => row.month === selectedMonth)
 
@@ -115,7 +126,8 @@ function MonthlyTargetsTab() {
     const commercial = totalizeCommercial(daysInPeriod(days, range))
 
     const newClients = clients.filter(
-      (client) => client.startDate && client.startDate >= range.from && client.startDate <= range.to,
+      (client) =>
+        client.startDate && client.startDate >= range.from && client.startDate <= range.to,
     ).length
 
     const margin = netMargin(monthTransactions)
@@ -161,14 +173,29 @@ function MonthlyTargetsTab() {
             <span className="text-sm text-muted-foreground">Nenhuma meta cadastrada ainda</span>
           )}
           {canManage && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="ml-auto"
-              onClick={() => setTargetDialogOpen(true)}
-            >
-              <Plus /> Definir meta do mês
-            </Button>
+            <div className="ml-auto flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setTargetDialogOpen(true)}>
+                {target ? (
+                  <>
+                    <Pencil /> Editar meta do mês
+                  </>
+                ) : (
+                  <>
+                    <Plus /> Definir meta do mês
+                  </>
+                )}
+              </Button>
+              {target && (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Excluir a meta deste mês"
+                  onClick={() => setDeletingTarget(true)}
+                >
+                  <Trash2 />
+                </Button>
+              )}
+            </div>
           )}
         </div>
       </Card>
@@ -230,7 +257,27 @@ function MonthlyTargetsTab() {
         open={targetDialogOpen}
         onOpenChange={setTargetDialogOpen}
         month={selectedMonth}
+        target={target ?? null}
         onSaved={setSelectedMonth}
+      />
+
+      <ConfirmDialog
+        open={deletingTarget}
+        onOpenChange={setDeletingTarget}
+        title="Excluir a meta deste mês?"
+        description="As barras de progresso do mês somem. Os lançamentos, as vendas e os registros comerciais não são afetados."
+        confirmLabel="Excluir meta"
+        destructive
+        onConfirm={async () => {
+          if (!target) return
+          try {
+            await removeTarget.mutateAsync(target.id)
+            toast.success('Meta excluída.')
+            setDeletingTarget(false)
+          } catch (cause) {
+            toast.error(cause instanceof Error ? cause.message : 'Não foi possível excluir.')
+          }
+        }}
       />
     </div>
   )
@@ -246,15 +293,19 @@ function MonthlyTargetDialog({
   open,
   onOpenChange,
   month,
+  target = null,
   onSaved,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   month: string
+  /** Meta já existente do mês selecionado — o diálogo então corrige em vez de criar. */
+  target?: MonthlyTarget | null
   onSaved: (month: string) => void
 }) {
   const { session } = useSession()
   const create = useCreate('monthlyTargets', data.monthlyTargets)
+  const update = useUpdate('monthlyTargets', data.monthlyTargets)
 
   const [targetMonth, setTargetMonth] = React.useState(month)
   const [revenueCents, setRevenueCents] = React.useState(0)
@@ -269,17 +320,17 @@ function MonthlyTargetDialog({
 
   React.useEffect(() => {
     if (!open) return
-    setTargetMonth(month)
-    setRevenueCents(0)
-    setProfitCents(0)
-    setMrrCents(0)
-    setSetupCents(0)
-    setSalesCount(0)
-    setClientsCount(0)
-    setMeetingsCount(0)
-    setProposalsCount(0)
-    setMarginPercent(0)
-  }, [open, month])
+    setTargetMonth(target?.month ?? month)
+    setRevenueCents(target?.revenueCents ?? 0)
+    setProfitCents(target?.profitCents ?? 0)
+    setMrrCents(target?.mrrCents ?? 0)
+    setSetupCents(target?.setupCents ?? 0)
+    setSalesCount(target?.salesCount ?? 0)
+    setClientsCount(target?.clientsCount ?? 0)
+    setMeetingsCount(target?.meetingsCount ?? 0)
+    setProposalsCount(target?.proposalsCount ?? 0)
+    setMarginPercent(target?.marginPercent ?? 0)
+  }, [open, month, target])
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
@@ -292,21 +343,27 @@ function MonthlyTargetDialog({
 
     const normalizedMonth = `${targetMonth.slice(0, 7)}-01`
 
+    const fields = {
+      month: normalizedMonth,
+      revenueCents,
+      profitCents,
+      salesCount,
+      meetingsCount,
+      proposalsCount,
+      clientsCount,
+      mrrCents,
+      setupCents,
+      marginPercent,
+    }
+
     try {
-      await create.mutateAsync({
-        workspaceId: session.workspaceId,
-        month: normalizedMonth,
-        revenueCents,
-        profitCents,
-        salesCount,
-        meetingsCount,
-        proposalsCount,
-        clientsCount,
-        mrrCents,
-        setupCents,
-        marginPercent,
-      })
-      toast.success('Meta definida.')
+      if (target) {
+        await update.mutateAsync({ id: target.id, patch: fields })
+        toast.success('Meta atualizada.')
+      } else {
+        await create.mutateAsync({ workspaceId: session.workspaceId, ...fields })
+        toast.success('Meta definida.')
+      }
       onSaved(normalizedMonth)
       onOpenChange(false)
     } catch {
@@ -325,7 +382,7 @@ function MonthlyTargetDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="lg">
         <DialogHeader>
-          <DialogTitle>Meta do mês</DialogTitle>
+          <DialogTitle>{target ? 'Editar meta do mês' : 'Meta do mês'}</DialogTitle>
           <DialogDescription>
             Deixe em branco o que você não quer acompanhar. Só aparece o que for preenchido.
           </DialogDescription>
@@ -394,7 +451,7 @@ function MonthlyTargetDialog({
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={create.isPending}>
+            <Button type="submit" disabled={create.isPending || update.isPending}>
               Salvar meta
             </Button>
           </DialogFooter>
@@ -413,9 +470,14 @@ function FinancialGoalsTab() {
   const { data: accounts = [] } = useAccounts()
 
   const createGoal = useCreate('goals', data.goals)
+  const updateGoal = useUpdate('goals', data.goals)
+  const removeGoal = useRemove('goals', data.goals, ['goalContributions'])
+  const removeContribution = useRemove('goalContributions', data.goalContributions, ['goals'])
   const createContribution = useCreate('goalContributions', data.goalContributions, ['goals'])
 
   const [goalDialogOpen, setGoalDialogOpen] = React.useState(false)
+  const [editingGoal, setEditingGoal] = React.useState<Goal | null>(null)
+  const [deletingGoal, setDeletingGoal] = React.useState<Goal | null>(null)
   const [contributingTo, setContributingTo] = React.useState<string | null>(null)
   const [contributionCents, setContributionCents] = React.useState(0)
 
@@ -453,7 +515,12 @@ function FinancialGoalsTab() {
     <div className="space-y-4">
       {canManage && (
         <div className="flex justify-end">
-          <Button onClick={() => setGoalDialogOpen(true)}>
+          <Button
+            onClick={() => {
+              setEditingGoal(null)
+              setGoalDialogOpen(true)
+            }}
+          >
             <Plus /> Nova meta
           </Button>
         </div>
@@ -486,11 +553,39 @@ function FinancialGoalsTab() {
                       {progress.goal.targetDate && ` · até ${formatDate(progress.goal.targetDate)}`}
                     </p>
                   </div>
-                  {progress.onTrack != null && (
-                    <Badge variant={progress.onTrack ? 'positive' : 'negative'}>
-                      {progress.onTrack ? 'No ritmo' : 'Atrasada'}
-                    </Badge>
-                  )}
+                  <div className="flex shrink-0 items-center gap-1">
+                    {progress.onTrack != null && (
+                      <Badge variant={progress.onTrack ? 'positive' : 'negative'}>
+                        {progress.onTrack ? 'No ritmo' : 'Atrasada'}
+                      </Badge>
+                    )}
+                    {canManage && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={`Ações da meta ${progress.goal.name}`}
+                          >
+                            <MoreHorizontal />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            onSelect={() => {
+                              setEditingGoal(progress.goal)
+                              setGoalDialogOpen(true)
+                            }}
+                          >
+                            <Pencil /> Editar
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => setDeletingGoal(progress.goal)}>
+                            <Trash2 /> Excluir
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                  </div>
                 </div>
 
                 <div className="mb-1.5 flex items-baseline justify-between gap-2">
@@ -596,10 +691,41 @@ function FinancialGoalsTab() {
         open={goalDialogOpen}
         onOpenChange={setGoalDialogOpen}
         accounts={accounts}
-        onCreate={async (input) => {
+        goal={editingGoal}
+        onSubmit={async (input) => {
           if (!session) return
+          if (editingGoal) {
+            await updateGoal.mutateAsync({ id: editingGoal.id, patch: input })
+            toast.success('Meta atualizada.')
+            return
+          }
           await createGoal.mutateAsync({ ...input, workspaceId: session.workspaceId })
           toast.success('Meta criada.')
+        }}
+      />
+
+      <ConfirmDialog
+        open={deletingGoal != null}
+        onOpenChange={(open) => {
+          if (!open) setDeletingGoal(null)
+        }}
+        title="Excluir esta meta?"
+        description="Os aportes registrados nela também saem. O dinheiro em conta não é afetado — a meta é só o acompanhamento."
+        confirmLabel="Excluir meta"
+        destructive
+        onConfirm={async () => {
+          if (!deletingGoal) return
+          try {
+            // Aportes primeiro: uma meta apagada com aportes órfãos deixaria
+            // linhas invisíveis no banco, que só apareceriam no backup.
+            const orphans = contributions.filter((row) => row.goalId === deletingGoal.id)
+            for (const row of orphans) await removeContribution.mutateAsync(row.id)
+            await removeGoal.mutateAsync(deletingGoal.id)
+            toast.success('Meta excluída.')
+            setDeletingGoal(null)
+          } catch (cause) {
+            toast.error(cause instanceof Error ? cause.message : 'Não foi possível excluir.')
+          }
         }}
       />
     </div>
@@ -610,12 +736,14 @@ function GoalDialog({
   open,
   onOpenChange,
   accounts,
-  onCreate,
+  goal = null,
+  onSubmit,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   accounts: { id: string; name: string }[]
-  onCreate: (input: {
+  goal?: Goal | null
+  onSubmit: (input: {
     name: string
     type: GoalType
     targetCents: number
@@ -633,12 +761,12 @@ function GoalDialog({
 
   React.useEffect(() => {
     if (!open) return
-    setName('')
-    setType('reserve')
-    setTargetCents(0)
-    setTargetDate('')
-    setAccountId('__none__')
-  }, [open])
+    setName(goal?.name ?? '')
+    setType(goal?.type ?? 'reserve')
+    setTargetCents(goal?.targetCents ?? 0)
+    setTargetDate(goal?.targetDate ?? '')
+    setAccountId(goal?.accountId ?? '__none__')
+  }, [open, goal])
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
@@ -650,7 +778,7 @@ function GoalDialog({
       toast.error('Informe o valor alvo.')
       return
     }
-    await onCreate({
+    await onSubmit({
       name: name.trim(),
       type,
       targetCents,
@@ -666,7 +794,7 @@ function GoalDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Nova meta financeira</DialogTitle>
+          <DialogTitle>{goal ? 'Editar meta financeira' : 'Nova meta financeira'}</DialogTitle>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-4">
           <div className="space-y-1.5">

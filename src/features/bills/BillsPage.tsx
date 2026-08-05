@@ -1,5 +1,16 @@
 import * as React from 'react'
-import { CheckCircle2, Inbox, Search } from 'lucide-react'
+import { toast } from 'sonner'
+import {
+  CheckCircle2,
+  Inbox,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  RotateCcw,
+  Search,
+  Trash2,
+} from 'lucide-react'
+import { data } from '@/data'
 import { formatDate } from '@/lib/date'
 import { formatMoney } from '@/lib/money'
 import { BILL_STATUS_LABEL, COST_CENTER_LABEL } from '@/data/enums'
@@ -15,9 +26,17 @@ import {
 import { usePeriod } from '@/app/period'
 import { useSession } from '@/app/session'
 import { EmptyState, PageHeader } from '@/components/PageHeader'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
+import { ShowMore, useVisibleCount } from '@/components/ShowMore'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -35,7 +54,16 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { useAccounts, useBillPayments, useBills } from '@/hooks/data'
+import {
+  useAccounts,
+  useBillPayments,
+  useBills,
+  useCategories,
+  useClients,
+  useRemove,
+  useUnsettleBillPayment,
+} from '@/hooks/data'
+import { BillDialog } from './BillDialog'
 import { SettleBillDialog } from './SettleBillDialog'
 
 const ALL = '__all__'
@@ -58,16 +86,40 @@ export function BillsPage({ direction }: { direction: BillDirection }) {
   const { data: bills = [], isLoading } = useBills()
   const { data: payments = [] } = useBillPayments()
   const { data: accounts = [] } = useAccounts()
+  const { data: categories = [] } = useCategories()
+  const { data: clients = [] } = useClients()
+  const removeBill = useRemove('bills', data.bills)
+  const unsettle = useUnsettleBillPayment()
 
   const [search, setSearch] = React.useState('')
   const [statusFilter, setStatusFilter] = React.useState<DisplayBillStatus | typeof ALL>(ALL)
   const [onlyPeriod, setOnlyPeriod] = React.useState(true)
   const [settling, setSettling] = React.useState<BillView | null>(null)
+  const [dialogOpen, setDialogOpen] = React.useState(false)
+  const [editing, setEditing] = React.useState<BillView | null>(null)
+  const [deleting, setDeleting] = React.useState<BillView | null>(null)
+  const [reversing, setReversing] = React.useState<BillView | null>(null)
 
   const isReceivable = direction === 'receivable'
 
+  /** Baixas de cada título — o estorno precisa saber qual foi a última. */
+  const paymentsByBill = React.useMemo(() => {
+    const map = new Map<string, typeof payments>()
+    for (const payment of payments) {
+      const list = map.get(payment.billId) ?? []
+      list.push(payment)
+      map.set(payment.billId, list)
+    }
+    for (const list of map.values()) list.sort((a, b) => a.date.localeCompare(b.date))
+    return map
+  }, [payments])
+
   const views = React.useMemo(
-    () => toBillViews(bills.filter((bill) => bill.direction === direction), payments),
+    () =>
+      toBillViews(
+        bills.filter((bill) => bill.direction === direction),
+        payments,
+      ),
     [bills, payments, direction],
   )
 
@@ -97,6 +149,56 @@ export function BillsPage({ direction }: { direction: BillDirection }) {
     }
   }, [views])
 
+  // Os totais do topo somam a lista inteira; o corte é só de exibição.
+  const pagination = useVisibleCount(filtered.length)
+
+  function openNew() {
+    setEditing(null)
+    setDialogOpen(true)
+  }
+
+  function openEdit(view: BillView) {
+    setEditing(view)
+    setDialogOpen(true)
+  }
+
+  async function confirmDelete() {
+    if (!deleting) return
+    try {
+      await removeBill.mutateAsync(deleting.bill.id)
+      toast.success('Título excluído.')
+      setDeleting(null)
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : 'Não foi possível excluir.')
+    }
+  }
+
+  /**
+   * Estorno da última baixa.
+   *
+   * A mensagem "estorne a baixa na tela do título" já existia em outras telas,
+   * mas o botão não — o caminho apontava para o vazio. Estornar apaga a
+   * transação de caixa gerada e reabre o título, que é a única forma correta
+   * de desfazer: apagar a transação sozinha deixaria o título quitado sem
+   * dinheiro nenhum atrás dele.
+   */
+  async function confirmReverse() {
+    if (!reversing) return
+    const list = paymentsByBill.get(reversing.bill.id) ?? []
+    const last = list[list.length - 1]
+    if (!last) {
+      setReversing(null)
+      return
+    }
+    try {
+      await unsettle.mutateAsync(last.id)
+      toast.success('Baixa estornada — o título voltou a ficar em aberto.')
+      setReversing(null)
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : 'Não foi possível estornar.')
+    }
+  }
+
   return (
     <>
       <PageHeader
@@ -105,6 +207,13 @@ export function BillsPage({ direction }: { direction: BillDirection }) {
           isReceivable
             ? 'Títulos emitidos para clientes, com atraso e recebimento parcial.'
             : 'Compromissos com fornecedores e custos programados, por vencimento e centro de custo.'
+        }
+        actions={
+          canManage && (
+            <Button onClick={openNew}>
+              <Plus /> {isReceivable ? 'Novo recebimento' : 'Nova conta'}
+            </Button>
+          )
         }
       />
 
@@ -212,7 +321,7 @@ export function BillsPage({ direction }: { direction: BillDirection }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((view) => (
+              {filtered.slice(0, pagination.count).map((view) => (
                 <TableRow key={view.bill.id}>
                   <TableCell className="text-muted-foreground">
                     {formatDate(view.bill.dueDate)}
@@ -247,15 +356,44 @@ export function BillsPage({ direction }: { direction: BillDirection }) {
                   </TableCell>
 
                   <TableCell>
-                    {canManage && view.status !== 'paid' && view.status !== 'canceled' && (
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        title={isReceivable ? 'Registrar recebimento' : 'Registrar pagamento'}
-                        onClick={() => setSettling(view)}
-                      >
-                        <CheckCircle2 />
-                      </Button>
+                    {canManage && (
+                      <div className="flex items-center justify-end gap-0.5">
+                        {view.status !== 'paid' && view.status !== 'canceled' && (
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            title={isReceivable ? 'Registrar recebimento' : 'Registrar pagamento'}
+                            onClick={() => setSettling(view)}
+                          >
+                            <CheckCircle2 />
+                          </Button>
+                        )}
+
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              aria-label={`Ações do título ${view.bill.description}`}
+                            >
+                              <MoreHorizontal />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onSelect={() => openEdit(view)}>
+                              <Pencil /> Editar
+                            </DropdownMenuItem>
+                            {view.paidCents > 0 && (
+                              <DropdownMenuItem onSelect={() => setReversing(view)}>
+                                <RotateCcw /> Estornar última baixa
+                              </DropdownMenuItem>
+                            )}
+                            <DropdownMenuItem onSelect={() => setDeleting(view)}>
+                              <Trash2 /> Excluir
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     )}
                   </TableCell>
                 </TableRow>
@@ -265,6 +403,14 @@ export function BillsPage({ direction }: { direction: BillDirection }) {
         )}
       </Card>
 
+      <ShowMore
+        total={filtered.length}
+        count={pagination.count}
+        onShowMore={pagination.showMore}
+        noun="título"
+        nounPlural="títulos"
+      />
+
       <SettleBillDialog
         view={settling}
         accounts={accounts}
@@ -272,6 +418,51 @@ export function BillsPage({ direction }: { direction: BillDirection }) {
         onOpenChange={(open) => {
           if (!open) setSettling(null)
         }}
+      />
+
+      <BillDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        direction={direction}
+        bill={editing?.bill ?? null}
+        paidCents={editing?.paidCents ?? 0}
+        accounts={accounts}
+        categories={categories}
+        clients={clients}
+      />
+
+      <ConfirmDialog
+        open={deleting != null}
+        onOpenChange={(open) => {
+          if (!open) setDeleting(null)
+        }}
+        title="Excluir este título?"
+        description={
+          deleting?.paidCents
+            ? 'Este título já tem baixa registrada. Excluí-lo deixaria a entrada de caixa sem origem — estorne a baixa antes.'
+            : 'O título sai do previsto do fluxo de caixa. Se ele veio de uma venda ou de uma regra recorrente, pode ser gerado de novo por ali.'
+        }
+        confirmLabel="Excluir título"
+        destructive
+        onConfirm={async () => {
+          if (deleting?.paidCents) {
+            toast.error('Estorne a baixa antes de excluir o título.')
+            return
+          }
+          await confirmDelete()
+        }}
+      />
+
+      <ConfirmDialog
+        open={reversing != null}
+        onOpenChange={(open) => {
+          if (!open) setReversing(null)
+        }}
+        title="Estornar a última baixa?"
+        description="A transação de caixa gerada por ela é apagada e o título volta a ficar em aberto pelo valor correspondente."
+        confirmLabel="Estornar"
+        destructive
+        onConfirm={confirmReverse}
       />
     </>
   )

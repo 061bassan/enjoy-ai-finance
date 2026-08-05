@@ -1,9 +1,10 @@
 import { Suspense, lazy, type ReactNode } from 'react'
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
 import { LoginPage } from '@/features/auth/LoginPage'
 import { PendingAccessPage } from '@/features/auth/PendingAccessPage'
 import { AppShell } from './AppShell'
+import { permissionForPath } from './navigation'
 import { useSession } from './session'
 
 /**
@@ -102,6 +103,28 @@ function RequireSession({ children }: { children: ReactNode }) {
   return <>{children}</>
 }
 
+/**
+ * Portão por permissão.
+ *
+ * Esconder o item no menu deixa a tela **acessível pela URL**. Este guarda
+ * fecha o buraco para todas as rotas de uma vez, usando a permissão declarada
+ * na própria navegação — não há como esquecer de proteger uma tela nova sem
+ * também esquecer de escondê-la do menu, e aí o descuido fica visível.
+ *
+ * No modo local isto continua sendo ergonomia, não segurança: quem abre o
+ * DevTools alcança o IndexedDB de qualquer jeito. A barreira de verdade é o
+ * RLS do Postgres, e as duas precisam dizer a mesma coisa.
+ */
+function RequirePermission({ children }: { children: ReactNode }) {
+  const { pathname } = useLocation()
+  const { allow } = useSession()
+
+  const required = permissionForPath(pathname)
+  if (required && !allow(required)) return <Navigate to="/" replace />
+
+  return <>{children}</>
+}
+
 export function AppRoutes() {
   return (
     <Routes>
@@ -126,27 +149,29 @@ export function AppRoutes() {
         <Route
           path="*"
           element={
-            <Suspense fallback={<Loading />}>
-              <Routes>
-                <Route path="transacoes" element={<TransactionsPage />} />
-                <Route path="fluxo-de-caixa" element={<CashflowPage />} />
-                <Route path="a-receber" element={<BillsPage direction="receivable" />} />
-                <Route path="a-pagar" element={<BillsPage direction="payable" />} />
-                <Route path="recorrentes" element={<RecurringPage />} />
-                <Route path="vendas" element={<SalesPage />} />
-                <Route path="leads" element={<LeadsPage />} />
-                <Route path="clientes" element={<ClientsPage />} />
-                <Route path="comercial" element={<CommercialPage />} />
-                <Route path="performance" element={<PerformancePage />} />
-                <Route path="executivo" element={<ExecutivePage />} />
-                <Route path="metas" element={<GoalsPage />} />
-                <Route path="compras" element={<PurchasesPage />} />
-                <Route path="kanban" element={<KanbanPage />} />
-                <Route path="relatorios" element={<ReportsPage />} />
-                <Route path="configuracoes" element={<SettingsPage />} />
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
-            </Suspense>
+            <RequirePermission>
+              <Suspense fallback={<Loading />}>
+                <Routes>
+                  <Route path="transacoes" element={<TransactionsPage />} />
+                  <Route path="fluxo-de-caixa" element={<CashflowPage />} />
+                  <Route path="a-receber" element={<BillsPage direction="receivable" />} />
+                  <Route path="a-pagar" element={<BillsPage direction="payable" />} />
+                  <Route path="recorrentes" element={<RecurringPage />} />
+                  <Route path="vendas" element={<SalesPage />} />
+                  <Route path="leads" element={<LeadsPage />} />
+                  <Route path="clientes" element={<ClientsPage />} />
+                  <Route path="comercial" element={<CommercialPage />} />
+                  <Route path="performance" element={<PerformancePage />} />
+                  <Route path="executivo" element={<ExecutivePage />} />
+                  <Route path="metas" element={<GoalsPage />} />
+                  <Route path="compras" element={<PurchasesPage />} />
+                  <Route path="kanban" element={<KanbanPage />} />
+                  <Route path="relatorios" element={<ReportsPage />} />
+                  <Route path="configuracoes" element={<SettingsPage />} />
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              </Suspense>
+            </RequirePermission>
           }
         />
       </Route>

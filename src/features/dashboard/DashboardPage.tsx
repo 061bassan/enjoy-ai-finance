@@ -25,12 +25,7 @@ import {
   Wallet,
 } from 'lucide-react'
 import { formatDate, formatMonthLabel, monthsInRange, rangeOfMonth, today } from '@/lib/date'
-import {
-  formatMoney,
-  formatMoneyCompact,
-  formatNumber,
-  formatPercent,
-} from '@/lib/money'
+import { formatMoney, formatMoneyCompact, formatNumber, formatPercent } from '@/lib/money'
 import { COST_CENTER_LABEL } from '@/data/enums'
 import {
   burnRate,
@@ -76,6 +71,22 @@ import {
   useSales,
   useTransactions,
 } from '@/hooks/data'
+import { OwnDashboard } from './OwnDashboard'
+
+/**
+ * Porta de entrada do painel.
+ *
+ * Quem não pode ver o financeiro da empresa (`sales`, hoje) recebe um painel
+ * próprio em vez desta tela. A bifurcação fica num componente separado, e não
+ * num `if` no meio do outro, porque assim o painel financeiro nem chega a
+ * carregar transações, títulos e contas para quem não vai vê-los — a
+ * restrição sai de graça em desempenho.
+ */
+export function DashboardPage() {
+  const { allow } = useSession()
+  if (!allow('view:financials')) return <OwnDashboard />
+  return <FinancialDashboard />
+}
 
 /**
  * Dashboard principal.
@@ -84,7 +95,7 @@ import {
  * o que entrega a "automação" pedida: registrar uma venda ou baixar um
  * título muda estes números na hora seguinte, sem recálculo agendado.
  */
-export function DashboardPage() {
+function FinancialDashboard() {
   const { range, comparisonRange } = usePeriod()
   const { workspace } = useSession()
   const isTeam = workspace?.type === 'team'
@@ -199,14 +210,19 @@ export function DashboardPage() {
       : null
 
   // Base ainda vazia: mostrar o caminho, não uma parede de zeros.
-  const isEmpty = !isLoading && transactions.length === 0 && sales.length === 0 && bills.length === 0
+  const isEmpty =
+    !isLoading && transactions.length === 0 && sales.length === 0 && bills.length === 0
 
   if (isEmpty) {
     return (
       <>
         <PageHeader
           title="Painel"
-          description={isTeam ? 'Comece registrando o que já aconteceu.' : 'Comece registrando suas movimentações.'}
+          description={
+            isTeam
+              ? 'Comece registrando o que já aconteceu.'
+              : 'Comece registrando suas movimentações.'
+          }
         />
         <FirstSteps isTeam={isTeam} />
       </>
@@ -322,7 +338,11 @@ export function DashboardPage() {
             />
             <KpiCard
               label="Runway"
-              value={metrics.runway != null ? `${formatNumber(metrics.runway)} meses` : 'operação lucrativa'}
+              value={
+                metrics.runway != null
+                  ? `${formatNumber(metrics.runway)} meses`
+                  : 'operação lucrativa'
+              }
               loading={isLoading}
               hint="Por quantos meses o caixa atual sustenta a queima média. Só existe quando há meses de prejuízo nos últimos 12."
             />
@@ -398,8 +418,15 @@ export function DashboardPage() {
             height={280}
           >
             <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={metrics.series} margin={{ top: 4, right: 8, left: 8, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={chartColor('border')} vertical={false} />
+              <ComposedChart
+                data={metrics.series}
+                margin={{ top: 4, right: 8, left: 8, bottom: 0 }}
+              >
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke={chartColor('border')}
+                  vertical={false}
+                />
                 <XAxis
                   dataKey="month"
                   tickFormatter={formatMonthLabel}

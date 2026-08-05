@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { data } from '@/data'
 import type { ListQuery, NewEntity, PatchEntity, Repository } from '@/data/contracts'
@@ -49,12 +50,7 @@ const FINANCIAL_COLLECTIONS = ['transactions', 'bills', 'billPayments', 'sales',
  * conhece a venda — o tipo de inconsistência que destrói a confiança no
  * número.
  */
-const LEAD_CONVERSION_COLLECTIONS = [
-  'leads',
-  'leadActivities',
-  'clients',
-  ...FINANCIAL_COLLECTIONS,
-]
+const LEAD_CONVERSION_COLLECTIONS = ['leads', 'leadActivities', 'clients', ...FINANCIAL_COLLECTIONS]
 
 function useCollection<T>(
   key: string,
@@ -93,8 +89,10 @@ export const useRecurringRules = () =>
 export const useGoals = () => useCollection<Goal>('goals', data.goals)
 export const useGoalContributions = () =>
   useCollection<GoalContribution>('goalContributions', data.goalContributions)
-export const usePurchaseGoals = () => useCollection<PurchaseGoal>('purchaseGoals', data.purchaseGoals)
-export const useMonthlyTargets = () => useCollection<MonthlyTarget>('monthlyTargets', data.monthlyTargets)
+export const usePurchaseGoals = () =>
+  useCollection<PurchaseGoal>('purchaseGoals', data.purchaseGoals)
+export const useMonthlyTargets = () =>
+  useCollection<MonthlyTarget>('monthlyTargets', data.monthlyTargets)
 export const useBoards = () => useCollection<Board>('boards', data.boards)
 export const useBoardColumns = () => useCollection<BoardColumn>('boardColumns', data.boardColumns)
 export const useCards = () => useCollection<Card>('cards', data.cards)
@@ -132,10 +130,20 @@ export function useProfiles() {
   })
 }
 
-/** Mapa id → perfil, para resolver nomes de closer, SDR e responsável. */
+/**
+ * Mapa id → perfil, para resolver nomes de closer, SDR e responsável.
+ *
+ * Memoizado porque o mapa é usado como dependência de `useMemo` nas telas —
+ * uma instância nova a cada render invalidava a memoização de quem dependia
+ * dele, e a tabela de vendas remontava as colunas a cada tecla digitada na
+ * busca.
+ */
 export function useProfileMap() {
   const { data: profiles = [] } = useProfiles()
-  return new Map<Id, Profile>(profiles.map((profile) => [profile.id, profile]))
+  return useMemo(
+    () => new Map<Id, Profile>(profiles.map((profile) => [profile.id, profile])),
+    [profiles],
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -192,6 +200,39 @@ export function useCreateSale() {
     mutationFn: (input: Parameters<typeof data.ops.createSaleWithReceivables>[0]) =>
       data.ops.createSaleWithReceivables(input),
     onSuccess: () => invalidate([...FINANCIAL_COLLECTIONS, 'clients']),
+  })
+}
+
+/**
+ * Alterar uma venda mexe nos mesmos lugares que criá-la: os títulos podem ser
+ * refeitos e o cliente pode mudar de nome. A lista de invalidação é a mesma
+ * de propósito — esquecer uma coleção aqui deixaria a tela de títulos
+ * mostrando parcelas que não existem mais.
+ */
+export function useUpdateSale() {
+  const invalidate = useInvalidate()
+  return useMutation({
+    mutationFn: (input: Parameters<typeof data.ops.updateSaleWithReceivables>[0]) =>
+      data.ops.updateSaleWithReceivables(input),
+    onSuccess: () => invalidate([...FINANCIAL_COLLECTIONS, 'clients']),
+  })
+}
+
+/** Excluir pode devolver um lead para negociação — daí `leads` na lista. */
+export function useDeleteSale() {
+  const invalidate = useInvalidate()
+  return useMutation({
+    mutationFn: (input: Parameters<typeof data.ops.deleteSale>[0]) => data.ops.deleteSale(input),
+    onSuccess: () => invalidate([...LEAD_CONVERSION_COLLECTIONS, 'cards']),
+  })
+}
+
+/** Exclusão de lançamento com as regras de transferência e baixa aplicadas. */
+export function useDeleteTransaction() {
+  const invalidate = useInvalidate()
+  return useMutation({
+    mutationFn: (transactionId: Id) => data.ops.deleteTransaction(transactionId),
+    onSuccess: () => invalidate(['transactions', 'bills', 'billPayments']),
   })
 }
 

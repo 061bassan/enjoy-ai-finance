@@ -1,17 +1,6 @@
 import * as React from 'react'
 import { toast } from 'sonner'
-import {
-  DndContext,
-  PointerSensor,
-  useDroppable,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from '@dnd-kit/core'
-import { useDraggable } from '@dnd-kit/core'
-import { CSS } from '@dnd-kit/utilities'
 import { AlertTriangle, Plus, Search, UserPlus } from 'lucide-react'
-import { cn } from '@/lib/cn'
 import { formatDate, today } from '@/lib/date'
 import { formatMoney, formatNumber, formatPercent } from '@/lib/money'
 import {
@@ -23,8 +12,8 @@ import {
   winRateFromLeads,
 } from '@/domain/leads'
 import { daysInPeriod, totalizeCommercial } from '@/domain/commercial'
-import { LEAD_SOURCE_LABEL, LEAD_STAGE_DESCRIPTION, LEAD_STAGE_LABEL } from '@/data/enums'
-import { OPEN_LEAD_STAGES, type Lead, type LeadStage } from '@/data/types'
+import { LEAD_SOURCE_LABEL, LEAD_STAGE_LABEL } from '@/data/enums'
+import type { Lead, LeadStage } from '@/data/types'
 import { canManageLead } from '@/data/rules/permissions'
 import { usePeriod } from '@/app/period'
 import { useSession } from '@/app/session'
@@ -59,6 +48,7 @@ import {
   useSales,
 } from '@/hooks/data'
 import { ConvertLeadDialog } from './ConvertLeadDialog'
+import { LeadBoard } from './LeadBoard'
 import { LeadDialog } from './LeadDialog'
 
 /**
@@ -150,49 +140,41 @@ export function LeadsPage() {
     }
   }, [visibleLeads, sales, commercialDays, range])
 
-  const byStage = React.useMemo(() => {
-    const map = new Map<LeadStage, Lead[]>()
-    for (const stage of [...OPEN_LEAD_STAGES, 'ganho', 'perdido'] as LeadStage[]) {
-      map.set(stage, [])
-    }
-    for (const lead of visibleLeads) {
-      map.get(lead.stage)?.push(lead)
-    }
-    // Mais antigo primeiro dentro da coluna: quem está esperando há mais
-    // tempo aparece no topo, que é onde o olho bate.
-    for (const list of map.values()) list.sort((a, b) => a.enteredAt.localeCompare(b.enteredAt))
-    return map
-  }, [visibleLeads])
+  /** A carteira de quem está olhando — o quadro usa para travar o arrasto. */
+  const canMoveLead = React.useCallback(
+    (lead: Lead) => canManageLead(role, lead.ownerId === session?.user.id),
+    [role, session?.user.id],
+  )
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
+  /**
+   * Mudança de etapa, venha do arrasto ou do menu "mover para".
+   *
+   * Os dois caminhos passam por aqui de propósito: a regra de "ganhar exige
+   * criar a venda" não pode existir em um deles e faltar no outro, senão o
+   * menu fecharia leads pela metade — marcados como ganhos, sem venda atrás,
+   * quebrando a conversão apurada.
+   */
+  const handleMove = React.useCallback(
+    async (lead: Lead, toStage: LeadStage) => {
+      if (!session) return
+      if (!canMoveLead(lead)) {
+        toast.error('Você só pode mover os leads sob sua responsabilidade.')
+        return
+      }
 
-  async function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event
-    if (!over || !session) return
+      if (toStage === 'ganho') {
+        setConverting(lead)
+        return
+      }
 
-    const lead = leads.find((item) => item.id === active.id)
-    if (!lead) return
-
-    const toStage = String(over.id) as LeadStage
-    if (lead.stage === toStage) return
-    if (!canManageLead(role, lead.ownerId === session.user.id)) {
-      toast.error('Você só pode mover os leads sob sua responsabilidade.')
-      return
-    }
-
-    // Ganhar exige criar a venda — não é uma simples mudança de coluna, então
-    // o arrasto abre o formulário em vez de fechar o lead pela metade.
-    if (toStage === 'ganho') {
-      setConverting(lead)
-      return
-    }
-
-    try {
-      await moveStage.mutateAsync({ leadId: lead.id, toStage, actorId: session.user.id })
-    } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : 'Não foi possível mover o lead.')
-    }
-  }
+      try {
+        await moveStage.mutateAsync({ leadId: lead.id, toStage, actorId: session.user.id })
+      } catch (cause) {
+        toast.error(cause instanceof Error ? cause.message : 'Não foi possível mover o lead.')
+      }
+    },
+    [session, canMoveLead, moveStage],
+  )
 
   function openNew() {
     setDialogLead(null)
@@ -290,27 +272,29 @@ export function LeadsPage() {
             </h3>
           </div>
           <ul className="divide-y divide-border">
-            {metrics.attention.slice(0, 6).map(({ lead, reason, daysSilent, actionOverdueDays }) => (
-              <li key={lead.id} className="flex items-center gap-3 py-2">
-                <button
-                  type="button"
-                  onClick={() => openEdit(lead)}
-                  className="min-w-0 flex-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <span className="block truncate text-sm font-medium">{lead.name}</span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {reason === 'acao_atrasada'
-                      ? `Ação combinada atrasada há ${actionOverdueDays} ${
-                          actionOverdueDays === 1 ? 'dia' : 'dias'
-                        }${lead.nextActionNote ? ` — ${lead.nextActionNote}` : ''}`
-                      : `Sem contato há ${daysSilent} dias`}
-                  </span>
-                </button>
-                <Badge variant="outline" className="shrink-0">
-                  {LEAD_STAGE_LABEL[lead.stage]}
-                </Badge>
-              </li>
-            ))}
+            {metrics.attention
+              .slice(0, 6)
+              .map(({ lead, reason, daysSilent, actionOverdueDays }) => (
+                <li key={lead.id} className="flex items-center gap-3 py-2">
+                  <button
+                    type="button"
+                    onClick={() => openEdit(lead)}
+                    className="min-w-0 flex-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <span className="block truncate text-sm font-medium">{lead.name}</span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {reason === 'acao_atrasada'
+                        ? `Ação combinada atrasada há ${actionOverdueDays} ${
+                            actionOverdueDays === 1 ? 'dia' : 'dias'
+                          }${lead.nextActionNote ? ` — ${lead.nextActionNote}` : ''}`
+                        : `Sem contato há ${daysSilent} dias`}
+                    </span>
+                  </button>
+                  <Badge variant="outline" className="shrink-0">
+                    {LEAD_STAGE_LABEL[lead.stage]}
+                  </Badge>
+                </li>
+              ))}
           </ul>
         </Card>
       )}
@@ -365,18 +349,12 @@ export function LeadsPage() {
           </TabsList>
 
           <TabsContent value="quadro">
-            <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                {([...OPEN_LEAD_STAGES, 'ganho', 'perdido'] as LeadStage[]).map((stage) => (
-                  <StageColumn
-                    key={stage}
-                    stage={stage}
-                    leads={byStage.get(stage) ?? []}
-                    onOpen={openEdit}
-                  />
-                ))}
-              </div>
-            </DndContext>
+            <LeadBoard
+              leads={visibleLeads}
+              onOpen={openEdit}
+              onMove={handleMove}
+              canMove={canMoveLead}
+            />
           </TabsContent>
 
           <TabsContent value="lista">
@@ -401,16 +379,17 @@ export function LeadsPage() {
                   {metrics.bySource.map((row) => (
                     <TableRow key={row.source}>
                       <TableCell className="font-medium">
-                        {row.source === 'sem_origem'
-                          ? 'Sem origem'
-                          : LEAD_SOURCE_LABEL[row.source]}
+                        {row.source === 'sem_origem' ? 'Sem origem' : LEAD_SOURCE_LABEL[row.source]}
                       </TableCell>
                       <TableCell data-numeric>{formatNumber(row.total)}</TableCell>
                       <TableCell data-numeric>{formatNumber(row.won)}</TableCell>
                       <TableCell data-numeric className="font-medium">
                         {row.conversion != null ? formatPercent(row.conversion) : '—'}
                       </TableCell>
-                      <TableCell data-numeric className="hidden text-muted-foreground sm:table-cell">
+                      <TableCell
+                        data-numeric
+                        className="hidden text-muted-foreground sm:table-cell"
+                      >
                         {formatMoney(row.pipelineCents)}
                       </TableCell>
                     </TableRow>
@@ -430,108 +409,6 @@ export function LeadsPage() {
         }}
       />
     </>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Quadro
-// ---------------------------------------------------------------------------
-
-function StageColumn({
-  stage,
-  leads,
-  onOpen,
-}: {
-  stage: LeadStage
-  leads: Lead[]
-  onOpen: (lead: Lead) => void
-}) {
-  const { setNodeRef, isOver } = useDroppable({ id: stage })
-  const total = leads.reduce((sum, lead) => sum + lead.estimatedValueCents, 0)
-
-  return (
-    <div
-      ref={setNodeRef}
-      className={cn(
-        'flex min-h-[220px] flex-col rounded-lg border border-border bg-surface-1/60 transition-colors',
-        isOver && 'border-foreground/40 bg-accent/40',
-      )}
-    >
-      <div className="border-b border-border px-3 py-2.5">
-        <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-sm font-medium">{LEAD_STAGE_LABEL[stage]}</span>
-          <Badge variant="muted" className="shrink-0">
-            {leads.length}
-          </Badge>
-        </div>
-        <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-          {total > 0 ? formatMoney(total) : LEAD_STAGE_DESCRIPTION[stage]}
-        </p>
-      </div>
-
-      <div className="flex-1 space-y-2 p-2">
-        {leads.map((lead) => (
-          <LeadCard key={lead.id} lead={lead} onOpen={onOpen} />
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function LeadCard({ lead, onOpen }: { lead: Lead; onOpen: (lead: Lead) => void }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: lead.id })
-
-  const overdue = lead.nextActionAt != null && lead.nextActionAt < today()
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={{ transform: CSS.Translate.toString(transform) }}
-      className={cn(
-        'rounded-md border border-border bg-surface-2 p-2.5 text-left shadow-sm transition-shadow',
-        isDragging && 'opacity-50',
-      )}
-    >
-      <button
-        type="button"
-        onClick={() => onOpen(lead)}
-        className="block w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <span className="block truncate text-sm font-medium">{lead.name}</span>
-        {lead.company && (
-          <span className="block truncate text-xs text-muted-foreground">{lead.company}</span>
-        )}
-      </button>
-
-      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        {lead.estimatedValueCents > 0 && (
-          <span className="text-xs tabular-nums text-muted-foreground">
-            {formatMoney(lead.estimatedValueCents)}
-          </span>
-        )}
-        {lead.source && (
-          <Badge variant="outline" className="text-[10px]">
-            {LEAD_SOURCE_LABEL[lead.source]}
-          </Badge>
-        )}
-        {overdue && (
-          <Badge variant="outline" className="border-negative/40 text-[10px] text-negative">
-            atrasado
-          </Badge>
-        )}
-      </div>
-
-      {/* A alça de arrasto é uma faixa própria: o card inteiro arrastável
-          impediria clicar para abrir, e abrir é a ação mais frequente. */}
-      <div
-        {...listeners}
-        {...attributes}
-        role="button"
-        tabIndex={-1}
-        aria-label={`Arrastar ${lead.name}`}
-        className="mt-2 h-1.5 cursor-grab rounded-full bg-border transition-colors hover:bg-muted-foreground/40 active:cursor-grabbing"
-      />
-    </div>
   )
 }
 

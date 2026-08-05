@@ -101,7 +101,29 @@ export interface CommercialKpis {
   callToMeeting: number | null
   meetingToProposal: number | null
   proposalToClose: number | null
+
+  /**
+   * Win rate do funil: **vendas registradas ÷ leads do período**.
+   *
+   * É a pergunta que o funil existe para responder — "de tudo que chegou,
+   * quanto virou cliente". A conta anterior (propostas aprovadas ÷ propostas
+   * decididas) media outra coisa: o aproveitamento de quem já tinha recebido
+   * proposta, ignorando todo mundo que nunca chegou lá. Um time que envia
+   * três propostas por mês e fecha as três marcava 100% enquanto perdia 200
+   * leads no caminho.
+   */
   winRate: number | null
+  /** De onde veio o denominador — a tela precisa dizer isso a quem lê. */
+  winRateOrigin: 'crm' | 'diario' | 'indisponivel'
+  /** Numerador e denominador expostos: sem eles, um % não se audita. */
+  saleCount: number
+  leadCount: number
+
+  /**
+   * A métrica antiga, com o nome que sempre foi o correto. Continua útil —
+   * responde pela qualidade da proposta, não pela do funil inteiro.
+   */
+  proposalApprovalRate: number | null
   lossRate: number | null
 
   /** Receita gerada sobre investimento comercial. */
@@ -110,21 +132,40 @@ export interface CommercialKpis {
   averageTicketCents: Cents | null
 }
 
+export interface CommercialKpiOptions {
+  /**
+   * Leads do CRM no período.
+   *
+   * Quando existe, é o denominador do win rate: lead com nome e telefone é um
+   * dado melhor que um total digitado no fim do dia. Sem ele, o diário
+   * comercial assume — pior, mas ainda auditável.
+   */
+  leadCount?: number
+}
+
 /**
  * Calcula os KPIs comerciais.
  *
- * `sales` entra porque ROI e ticket médio dependem da receita efetivamente
- * fechada — o diário comercial sozinho conhece o esforço, não o resultado.
+ * `sales` entra porque ROI, ticket médio e win rate dependem da receita
+ * efetivamente fechada — o diário comercial sozinho conhece o esforço, não o
+ * resultado. Espera-se que `sales` já venha recortado pelo período.
  */
 export function commercialKpis(
   totals: CommercialTotals,
   sales: readonly Sale[],
+  options: CommercialKpiOptions = {},
 ): CommercialKpis {
   const closed = activeSales(sales)
   const revenue = sumCents(closed.map((sale) => sale.amountCents))
   const investment = totals.totalInvestmentCents
 
   const attended = totals.meetings - totals.noShows
+
+  // O CRM tem precedência sobre o diário, e a origem viaja junto com o número.
+  const crmLeads = options.leadCount ?? 0
+  const leadCount = crmLeads > 0 ? crmLeads : totals.leads
+  const winRateOrigin: CommercialKpis['winRateOrigin'] =
+    crmLeads > 0 ? 'crm' : totals.leads > 0 ? 'diario' : 'indisponivel'
 
   return {
     cplCents: totals.leads ? Math.round(investment / totals.leads) : null,
@@ -142,7 +183,13 @@ export function commercialKpis(
     callToMeeting: safeRatio(totals.meetings, totals.calls),
     meetingToProposal: safeRatio(totals.proposalsSent, attended),
     proposalToClose: safeRatio(totals.proposalsApproved, totals.proposalsSent),
-    winRate: safeRatio(
+
+    winRate: safeRatio(closed.length, leadCount),
+    winRateOrigin,
+    saleCount: closed.length,
+    leadCount,
+
+    proposalApprovalRate: safeRatio(
       totals.proposalsApproved,
       totals.proposalsApproved + totals.proposalsRejected,
     ),
@@ -194,10 +241,7 @@ export interface FunnelOptions {
 }
 
 /** Funil comercial, do lead à venda fechada. */
-export function buildFunnel(
-  totals: CommercialTotals,
-  options: FunnelOptions = {},
-): FunnelStage[] {
+export function buildFunnel(totals: CommercialTotals, options: FunnelOptions = {}): FunnelStage[] {
   const investment = totals.totalInvestmentCents
   const hasCrmLeads = options.leadCount != null && options.leadCount > 0
 

@@ -10,7 +10,6 @@ import {
   Search,
   Trash2,
 } from 'lucide-react'
-import { data } from '@/data'
 import { formatDate } from '@/lib/date'
 import { formatMoney } from '@/lib/money'
 import { COST_CENTER_LABEL, TRANSACTION_KIND_LABEL } from '@/data/enums'
@@ -19,6 +18,7 @@ import { grossRevenue, inRange, netProfit, totalExpenses } from '@/domain/financ
 import { usePeriod } from '@/app/period'
 import { useSession } from '@/app/session'
 import { EmptyState, PageHeader } from '@/components/PageHeader'
+import { ShowMore, useVisibleCount } from '@/components/ShowMore'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -45,7 +45,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { useAccounts, useCategories, useRemove, useTransactions } from '@/hooks/data'
+import { useAccounts, useCategories, useDeleteTransaction, useTransactions } from '@/hooks/data'
 import { TransactionDialog } from './TransactionDialog'
 
 const ALL = '__all__'
@@ -58,7 +58,7 @@ export function TransactionsPage() {
   const { data: transactions = [], isLoading } = useTransactions()
   const { data: accounts = [] } = useAccounts()
   const { data: categories = [] } = useCategories()
-  const remove = useRemove('transactions', data.transactions)
+  const remove = useDeleteTransaction()
 
   const [search, setSearch] = React.useState('')
   const [kindFilter, setKindFilter] = React.useState<TransactionKind | typeof ALL>(ALL)
@@ -95,6 +95,10 @@ export function TransactionsPage() {
     [filtered],
   )
 
+  // Os totais acima somam a lista inteira; o corte abaixo é só de exibição.
+  // Se o recorte mudasse a soma, "mostrar mais" alteraria a receita do mês.
+  const pagination = useVisibleCount(filtered.length)
+
   function openNew() {
     setEditing(null)
     setDialogOpen(true)
@@ -106,16 +110,16 @@ export function TransactionsPage() {
   }
 
   async function handleDelete(transaction: Transaction) {
-    // Transações geradas por uma baixa não podem ser apagadas soltas: isso
-    // deixaria o título quitado sem lastro no caixa. O caminho certo é
-    // estornar a baixa na tela do título.
-    if (transaction.billId) {
-      toast.error('Esta transação veio da baixa de um título. Estorne a baixa na tela do título.')
-      return
-    }
+    // As duas travas — baixa de título e par de transferência — moram na
+    // operação, não aqui. A tela só reporta: uma regra que vive na tela vale
+    // apenas enquanto ninguém escrever a segunda tela.
     try {
       await remove.mutateAsync(transaction.id)
-      toast.success('Lançamento excluído.')
+      toast.success(
+        transaction.transferGroupId
+          ? 'Transferência excluída — as duas pontas saíram juntas.'
+          : 'Lançamento excluído.',
+      )
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : 'Não foi possível excluir.')
     }
@@ -246,7 +250,7 @@ export function TransactionsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((transaction) => (
+              {filtered.slice(0, pagination.count).map((transaction) => (
                 <TableRow key={transaction.id}>
                   <TableCell className="text-muted-foreground">
                     {formatDate(transaction.date)}
@@ -292,7 +296,11 @@ export function TransactionsPage() {
                           : 'text-muted-foreground'
                       }
                     >
-                      {transaction.kind === 'expense' ? '−' : transaction.kind === 'income' ? '+' : ''}
+                      {transaction.kind === 'expense'
+                        ? '−'
+                        : transaction.kind === 'income'
+                          ? '+'
+                          : ''}
                       {formatMoney(transaction.amountCents)}
                     </span>
                   </TableCell>
@@ -323,11 +331,13 @@ export function TransactionsPage() {
         )}
       </Card>
 
-      {filtered.length > 0 && (
-        <p className="mt-3 text-xs text-muted-foreground">
-          {filtered.length} {filtered.length === 1 ? 'lançamento' : 'lançamentos'} no período.
-        </p>
-      )}
+      <ShowMore
+        total={filtered.length}
+        count={pagination.count}
+        onShowMore={pagination.showMore}
+        noun="lançamento"
+        nounPlural="lançamentos"
+      />
 
       <TransactionDialog
         open={dialogOpen}

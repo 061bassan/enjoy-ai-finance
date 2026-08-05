@@ -25,6 +25,7 @@ import {
 } from '@/domain/finance'
 import { saleEconomics, summarizeSales } from '@/domain/sales'
 import { commercialKpis, daysInPeriod, totalizeCommercial } from '@/domain/commercial'
+import { leadsInPeriod } from '@/domain/leads'
 import { usePeriod } from '@/app/period'
 import { useSession } from '@/app/session'
 import { PageHeader } from '@/components/PageHeader'
@@ -46,6 +47,7 @@ import {
   useCategories,
   useClients,
   useCommercialDays,
+  useLeads,
   useProfileMap,
   useSales,
   useSaleCosts,
@@ -73,6 +75,7 @@ export function ReportsPage() {
   const { data: accounts = [] } = useAccounts()
   const { data: clients = [] } = useClients()
   const { data: days = [] } = useCommercialDays()
+  const { data: leads = [] } = useLeads()
   const profileMap = useProfileMap()
 
   const categoryNames = React.useMemo(
@@ -110,10 +113,12 @@ export function ReportsPage() {
       costCenters: expensesByCostCenter(periodTransactions, COST_CENTER_LABEL),
       salesSummary: summarizeSales(periodSales),
       commercial,
-      commercialKpis: commercialKpis(commercial, periodSales),
+      commercialKpis: commercialKpis(commercial, periodSales, {
+        leadCount: leadsInPeriod(leads, range).length,
+      }),
       billViews: toBillViews(periodBills, payments),
     }
-  }, [transactions, sales, bills, payments, days, range])
+  }, [transactions, sales, bills, payments, days, leads, range])
 
   const periodLabel = `${formatDate(range.from)} a ${formatDate(range.to)}`
   const fileSuffix = `${range.from}_${range.to}`
@@ -148,7 +153,10 @@ export function ReportsPage() {
         value: (row) => (row.closerId ? (profileMap.get(row.closerId)?.name ?? '') : ''),
       },
       { header: 'SDR', value: (row) => (row.sdrId ? (profileMap.get(row.sdrId)?.name ?? '') : '') },
-      { header: 'Origem', value: (row) => (row.leadSource ? LEAD_SOURCE_LABEL[row.leadSource] : '') },
+      {
+        header: 'Origem',
+        value: (row) => (row.leadSource ? LEAD_SOURCE_LABEL[row.leadSource] : ''),
+      },
       { header: 'Modelo', value: (row) => SALE_MODEL_LABEL[row.model] },
       { header: 'Valor do contrato', value: (row) => row.amountCents, money: true },
       { header: 'MRR', value: (row) => row.mrrCents, money: true },
@@ -344,10 +352,10 @@ export function ReportsPage() {
               { label: 'Valor vendido', value: formatMoney(report.salesSummary.totalCents) },
               { label: 'Ticket médio', value: formatMoney(report.salesSummary.averageTicketCents) },
               { label: 'MRR vendido', value: formatMoney(report.salesSummary.mrrCents) },
-              { label: 'Leads', value: formatNumber(report.commercial.leads) },
+              { label: 'Leads', value: formatNumber(report.commercialKpis.leadCount) },
               { label: 'Reuniões', value: formatNumber(report.commercial.meetings) },
               {
-                label: 'Win rate',
+                label: 'Win rate (vendas ÷ leads)',
                 value:
                   report.commercialKpis.winRate != null
                     ? formatPercent(report.commercialKpis.winRate)

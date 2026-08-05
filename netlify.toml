@@ -1,4 +1,7 @@
-# Configuração de build e hospedagem no Netlify.
+# Plano B de hospedagem — o deploy de verdade é na Vercel, ligada ao repositório.
+#
+# Este arquivo fica para o caso de uma troca de serviço: guarda a única
+# configuração que não é óbvia (o fallback de SPA) já resolvida.
 #
 # O ponto crítico é o fallback de SPA: o app é single-page com rotas no cliente
 # (React Router). Sem redirecionar tudo para index.html, qualquer acesso direto

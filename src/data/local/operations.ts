@@ -241,6 +241,157 @@ export class LocalOperations implements Operations {
   }
 
   /**
+   * Altera a venda e, opcionalmente, refaz os títulos dela.
+   *
+   * A regra que sustenta tudo aqui: **título com baixa é intocável**. A baixa
+   * gerou uma transação no caixa, e apagar o título por baixo dela deixaria
+   * dinheiro entrando de lugar nenhum. Por isso a regeneração é recusada
+   * inteira quando existe qualquer pagamento — recusar é mais honesto do que
+   * refazer "só os que dá", que produziria um parcelamento diferente do que
+   * a tela mostrou no momento da edição.
+   */
+  async updateSaleWithReceivables(input: {
+    saleId: Id
+    patch: Partial<Omit<Sale, 'id' | 'createdAt' | 'updatedAt' | 'workspaceId'>>
+    costs?: Omit<NewEntity<SaleCost>, 'saleId'>
+    regenerateReceivables: boolean
+    firstDueDate?: IsoDate
+  }): Promise<{ sale: Sale; bills: Bill[] }> {
+    return db.transaction('rw', [db.sales, db.saleCosts, db.bills, db.billPayments], async () => {
+      const current = await db.sales.get(input.saleId)
+      if (!current) throw new Error('Venda não encontrada.')
+
+      const sale: Sale = { ...current, ...input.patch, updatedAt: nowIso() }
+      await db.sales.put(sale)
+
+      if (input.costs) {
+        const existing = await db.saleCosts.where('saleId').equals(sale.id).first()
+        if (existing) {
+          await db.saleCosts.put({ ...existing, ...input.costs, updatedAt: nowIso() })
+        } else {
+          await db.saleCosts.add(stampNew<SaleCost>({ ...input.costs, saleId: sale.id }))
+        }
+      }
+
+      if (!input.regenerateReceivables) return { sale, bills: [] }
+
+      const oldBills = await db.bills.where('saleId').equals(sale.id).toArray()
+      for (const bill of oldBills) {
+        const payments = await db.billPayments.where('billId').equals(bill.id).toArray()
+        if (payments.length) {
+          throw new Error(
+            'Esta venda já tem recebimentos registrados. Estorne as baixas antes de refazer os títulos.',
+          )
+        }
+      }
+
+      await db.bills.bulkDelete(oldBills.map((bill) => bill.id))
+
+      const bills = this.buildReceivables(sale, input.firstDueDate)
+      if (bills.length) await db.bills.bulkAdd(bills)
+
+      return { sale, bills }
+    })
+  }
+
+  /**
+   * Apaga a venda e tudo que nasceu dela.
+   *
+   * O lead convertido volta para negociação em vez de continuar "ganho": um
+   * ganho sem venda atrás quebraria a leitura do funil, que passaria a contar
+   * uma conversão que não existe mais. A volta fica registrada na linha do
+   * tempo do lead — quem abrir amanhã precisa entender por que ele voltou.
+   */
+  async deleteSale(input: { saleId: Id; actorId: Id }): Promise<void> {
+    await db.transaction(
+      'rw',
+      [db.sales, db.saleCosts, db.bills, db.billPayments, db.leads, db.leadActivities, db.cards],
+      async () => {
+        const sale = await db.sales.get(input.saleId)
+        if (!sale) throw new Error('Venda não encontrada.')
+
+        const bills = await db.bills.where('saleId').equals(sale.id).toArray()
+        for (const bill of bills) {
+          const payments = await db.billPayments.where('billId').equals(bill.id).toArray()
+          if (payments.length) {
+            throw new Error(
+              'Esta venda tem títulos já recebidos. Estorne as baixas antes de excluí-la.',
+            )
+          }
+        }
+
+        await db.bills.bulkDelete(bills.map((bill) => bill.id))
+
+        const costs = await db.saleCosts.where('saleId').equals(sale.id).toArray()
+        await db.saleCosts.bulkDelete(costs.map((cost) => cost.id))
+
+        // Cards do kanban apontando para esta venda ficariam sem destino.
+        const cards = await db.cards.where('linkId').equals(sale.id).toArray()
+        const orphans = cards.filter((card) => card.linkType === 'sale')
+        await db.cards.bulkDelete(orphans.map((card) => card.id))
+
+        const lead = sale.leadId ? await db.leads.get(sale.leadId) : null
+        if (lead) {
+          await db.leads.put({
+            ...lead,
+            stage: 'negociacao',
+            saleId: null,
+            closedAt: null,
+            updatedAt: nowIso(),
+          })
+          await db.leadActivities.add(
+            stampNew<LeadActivity>({
+              workspaceId: lead.workspaceId,
+              leadId: lead.id,
+              kind: 'mudanca_etapa',
+              date: toIsoDate(new Date()),
+              summary: 'Venda excluída — lead devolvido para negociação',
+              fromStage: 'ganho',
+              toStage: 'negociacao',
+              createdBy: input.actorId,
+            }),
+          )
+        }
+
+        await db.sales.delete(sale.id)
+      },
+    )
+  }
+
+  /**
+   * Exclusão de lançamento com as duas travas que faltavam.
+   *
+   * Antes, a tela apagava a linha direto pelo repositório: uma transferência
+   * perdia metade do par (a saída sumia e a entrada ficava, inventando
+   * receita) e nada impedia apagar o outro lado de uma baixa se a checagem da
+   * tela fosse contornada. As duas regras moram aqui agora, onde valem para
+   * qualquer chamador.
+   */
+  async deleteTransaction(transactionId: Id): Promise<void> {
+    await db.transaction('rw', [db.transactions, db.billPayments], async () => {
+      const transaction = await db.transactions.get(transactionId)
+      if (!transaction) return
+
+      if (transaction.billId) {
+        throw new Error(
+          'Este lançamento veio da baixa de um título. Estorne a baixa na tela do título.',
+        )
+      }
+
+      if (transaction.transferGroupId) {
+        const pair = await db.transactions
+          .where('transferGroupId')
+          .equals(transaction.transferGroupId)
+          .toArray()
+        await db.transactions.bulkDelete(pair.map((row) => row.id))
+        return
+      }
+
+      await db.transactions.delete(transaction.id)
+    })
+  }
+
+  /**
    * Materializa os títulos de uma regra recorrente até `throughDate`.
    *
    * Idempotente de propósito: consulta os títulos já gerados pela regra e
@@ -366,7 +517,8 @@ export class LocalOperations implements Operations {
       const member = await db.members.get(input.memberId)
       if (!member) throw new Error('Pedido não encontrado.')
       if (member.status === 'active') throw new Error('Este acesso já está liberado.')
-      if (member.userId === input.actorId) throw new Error('Ninguém pode aprovar o próprio cadastro.')
+      if (member.userId === input.actorId)
+        throw new Error('Ninguém pode aprovar o próprio cadastro.')
 
       const updated: WorkspaceMember = {
         ...member,
@@ -397,7 +549,8 @@ export class LocalOperations implements Operations {
     return db.transaction('rw', [db.members], async () => {
       const member = await db.members.get(input.memberId)
       if (!member) throw new Error('Pedido não encontrado.')
-      if (member.userId === input.actorId) throw new Error('Ninguém pode decidir o próprio cadastro.')
+      if (member.userId === input.actorId)
+        throw new Error('Ninguém pode decidir o próprio cadastro.')
 
       const updated: WorkspaceMember = {
         ...member,
@@ -447,7 +600,8 @@ export class LocalOperations implements Operations {
         stage: input.toStage,
         lastContactAt: stampDate,
         closedAt: isClosing ? stampDate : null,
-        lostReason: input.toStage === 'perdido' ? (input.lostReason ?? lead.lostReason ?? null) : null,
+        lostReason:
+          input.toStage === 'perdido' ? (input.lostReason ?? lead.lostReason ?? null) : null,
         // Reabrir um lead limpa a próxima ação: a combinada anterior morreu
         // junto com o fechamento e cobrar por ela seria ruído.
         nextActionAt: isClosing ? null : lead.nextActionAt,
@@ -675,23 +829,27 @@ export class LocalOperations implements Operations {
       (await db.profiles.toArray()).map((profile) => [profile.id, profile.passwordHash ?? null]),
     )
 
-    await db.transaction('rw', TABLE_NAMES.map((name) => db.table(name)), async () => {
-      for (const name of TABLE_NAMES) {
-        const rows = payload[name]
-        if (!Array.isArray(rows) || !rows.length) continue
+    await db.transaction(
+      'rw',
+      TABLE_NAMES.map((name) => db.table(name)),
+      async () => {
+        for (const name of TABLE_NAMES) {
+          const rows = payload[name]
+          if (!Array.isArray(rows) || !rows.length) continue
 
-        if (name === 'profiles') {
-          await db.profiles.bulkPut(
-            (rows as Profile[]).map((profile) => ({
-              ...profile,
-              passwordHash: currentHashes.get(profile.id) ?? profile.passwordHash ?? null,
-            })),
-          )
-          continue
+          if (name === 'profiles') {
+            await db.profiles.bulkPut(
+              (rows as Profile[]).map((profile) => ({
+                ...profile,
+                passwordHash: currentHashes.get(profile.id) ?? profile.passwordHash ?? null,
+              })),
+            )
+            continue
+          }
+
+          await db.table(name).bulkPut(rows)
         }
-
-        await db.table(name).bulkPut(rows)
-      }
-    })
+      },
+    )
   }
 }
