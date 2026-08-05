@@ -16,3 +16,11 @@ Thumbs.db
 coverage
 *.log
 npm-debug.log*
+
+# Credenciais do projeto ligado à Vercel (inclui o token OIDC baixado no link).
+.vercel
+
+# O `vercel link` acrescentou aqui um `.env*` que anulava o `!.env.example` das
+# primeiras linhas — por vir depois, era ele que valia, e o arquivo de exemplo
+# sairia do versionamento na primeira vez que alguém o recriasse. As regras de
+# `.env` já estão no topo deste arquivo.
