@@ -96,10 +96,9 @@ recolhíveis, o **cadastro com fila de aprovação** e o **CRM de leads** — qu
 de conversão do funil passar a ser apurada em vez de digitada.
 
 Fase 9 — persistência no Supabase — **está executada**: o provider `src/data/supabase/`
-roda contra os mesmos contratos e as migrations `0001`–`0007` foram aplicadas num projeto
-real (RLS espelhando a matriz de permissões); as `0008`–`0011`, de segurança, estão
-prontas e pendentes de aplicação. Com `VITE_DATA_PROVIDER=supabase` os dados são do
-servidor; sem `.env`, o app volta ao IndexedDB por dispositivo. Ver `CLAUDE.md` §8.
+roda contra os mesmos contratos e as migrations `0001`–`0012` foram aplicadas num projeto
+real (RLS espelhando a matriz de permissões). Com `VITE_DATA_PROVIDER=supabase` os dados
+são do servidor; sem `.env`, o app volta ao IndexedDB por dispositivo. Ver `CLAUDE.md` §8.
 
 ---
 

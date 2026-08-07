@@ -348,12 +348,11 @@ O provider `src/data/supabase/` está implementado contra os mesmos contratos, e
 migrations `0001`–`0007` foram aplicadas num projeto real. **Nenhum arquivo de
 `src/features/` mudou por causa da troca** — o critério de sucesso foi cumprido.
 
-> **Atenção — migrations `0008`–`0011` ainda precisam ser aplicadas em produção.** Elas
-> corrigem três furos de segurança (leitura do financeiro pelo `sales`; PII do perfil
-> exposto a qualquer membro; `move_lead_stage` sem autorização) e adicionam o marcador de
-> direção da transferência. Rode `scripts/apply-migrations.mjs` no projeto para aplicá-las
-> — sem isso, o RLS antigo continua valendo no servidor. Todas são idempotentes
-> (`drop policy if exists`, `create or replace`, `add column if not exists`).
+> **As migrations `0008`–`0012` já foram aplicadas em produção** (RLS de `sales`, PII do
+> perfil, autorização de `move_lead_stage`, marcador de transferência e a escrita escopada
+> de venda pelo `sales`). Todas são idempotentes (`drop policy if exists`, `create or
+> replace`, `add column if not exists`) — rode `scripts/apply-migrations.mjs` num projeto
+> novo para replicá-las.
 
 As migrations (`supabase/migrations/`):
 
@@ -382,6 +381,13 @@ As migrations (`supabase/migrations/`):
   `SECURITY DEFINER` sem checar quem chama (qualquer autenticado movia qualquer lead).
   Ganhou guard espelhando a matriz (finance+ move qualquer lead; `sales` só o próprio;
   `viewer` nenhum). Fecha também a leitura de `activity_log` para o `sales`.
+- `0012_sales_write_scope.sql` — **alinha o RLS à matriz para o `sales`**: as quatro
+  operações de venda (`op_create_sale`, `op_update_sale`, `op_delete_sale`,
+  `op_convert_lead`) viram `SECURITY DEFINER` com portão explícito (`may_write_sale`:
+  finance+ em qualquer venda; `sales` só na própria — closer/sdr da venda, ou dono do
+  lead). O closer passa a fechar a própria venda; antes o RLS financeiro barrava e o
+  fluxo falhava só no Supabase. Como `DEFINER` ignora o RLS, cada função confere que toda
+  linha recebida pertence ao mesmo workspace (o `WITH CHECK` que o RLS dava de graça).
 
 **Decisão-chave (a razão de as RPC serem finas):** a matemática (parcelamento em
 `buildReceivables`, status em `persistedStatus`, recorrência em `occurrencesBetween`) roda
