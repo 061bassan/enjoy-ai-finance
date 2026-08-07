@@ -517,7 +517,16 @@ export class LocalOperations implements Operations {
       if (!lead) throw new Error('Lead não encontrado.')
       if (lead.stage === input.toStage) return lead
 
-      const isClosing = input.toStage === 'ganho' || input.toStage === 'perdido'
+      // Invariante 13: "ganho" nunca é só etiqueta — passa pela conversão, que
+      // cria cliente, venda e títulos. Mover direto aqui gravaria um lead ganho
+      // sem venda atrás e furaria a apuração do funil. A RPC do Supabase recusa
+      // do mesmo jeito; sem este guard os dois providers divergiriam.
+      if (input.toStage === 'ganho') {
+        throw new Error('Um lead ganho passa pela conversão em venda, não pela troca de etapa.')
+      }
+
+      // "ganho" já foi barrado acima (vai pela conversão); aqui fechar é perder.
+      const isClosing = input.toStage === 'perdido'
       const stampDate = toIsoDate(new Date())
 
       const updated: Lead = {
@@ -689,11 +698,13 @@ export class LocalOperations implements Operations {
       ...common,
       accountId: input.fromAccountId,
       description: `${input.description} (saída)`,
+      transferDirection: 'out',
     })
     const into = stampNew<Transaction>({
       ...common,
       accountId: input.toAccountId,
       description: `${input.description} (entrada)`,
+      transferDirection: 'in',
     })
 
     await db.transactions.bulkAdd([out, into])

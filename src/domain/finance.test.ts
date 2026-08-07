@@ -101,6 +101,40 @@ describe('accountBalance', () => {
     ]
     expect(totalCash(accounts, [])).toBe(100_000)
   })
+
+  it('debita a origem e credita o destino de uma transferência', () => {
+    // As duas pernas têm o mesmo kind e valor positivo; quem separa é a
+    // direção. Sem ela, o destino nunca seria creditado (bug histórico).
+    const from = account({ id: 'a', openingBalanceCents: 100_000 })
+    const to = account({ id: 'b', openingBalanceCents: 0 })
+    const legs = [
+      transaction({ kind: 'transfer', amountCents: 30_000, accountId: 'a', transferDirection: 'out' }),
+      transaction({ kind: 'transfer', amountCents: 30_000, accountId: 'b', transferDirection: 'in' }),
+    ]
+    expect(accountBalance(from, legs)).toBe(70_000)
+    expect(accountBalance(to, legs)).toBe(30_000)
+  })
+
+  it('mantém o caixa total neutro a uma transferência interna', () => {
+    // Mover dinheiro entre contas próprias não cria nem destrói caixa.
+    const accounts = [
+      account({ id: 'a', openingBalanceCents: 100_000 }),
+      account({ id: 'b', openingBalanceCents: 0 }),
+    ]
+    const legs = [
+      transaction({ kind: 'transfer', amountCents: 40_000, accountId: 'a', transferDirection: 'out' }),
+      transaction({ kind: 'transfer', amountCents: 40_000, accountId: 'b', transferDirection: 'in' }),
+    ]
+    expect(totalCash(accounts, legs)).toBe(100_000)
+  })
+
+  it('debita perna de transferência legada sem direção (fallback)', () => {
+    // Dado antigo, criado antes do marcador existir: preserva o comportamento
+    // de então (debitar) para não reescrever saldos já mostrados.
+    const acc = account({ id: 'a', openingBalanceCents: 50_000 })
+    const legacy = transaction({ kind: 'transfer', amountCents: 10_000, accountId: 'a' })
+    expect(accountBalance(acc, [legacy])).toBe(40_000)
+  })
 })
 
 describe('monthlySeries', () => {

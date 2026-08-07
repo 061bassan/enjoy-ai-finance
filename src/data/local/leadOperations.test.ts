@@ -141,6 +141,18 @@ describe('mover etapa', () => {
     expect(reaberto.closedAt).toBeNull()
     expect(reaberto.lostReason).toBeNull()
   })
+
+  it('recusa marcar como ganho por troca de etapa (invariante 13)', async () => {
+    // Ganho tem venda atrás; o caminho é converter, não etiquetar. A RPC do
+    // Supabase recusa igual — os dois providers precisam concordar.
+    const lead = await criarLead()
+    await expect(
+      ops.moveLeadStage({ leadId: lead.id, toStage: 'ganho', actorId: ATOR }),
+    ).rejects.toThrow()
+
+    const intocado = await db.leads.get(lead.id)
+    expect(intocado?.stage).not.toBe('ganho')
+  })
 })
 
 describe('converter em venda', () => {
