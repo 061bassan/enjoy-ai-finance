@@ -48,7 +48,7 @@ primeiro pedido.
 
 | Rota | |
 |---|---|
-| `/` | Dashboard — 20 KPIs, alertas automáticos, meta do mês |
+| `/` | Dashboard — 18 KPIs, alertas automáticos, meta do mês |
 | `/performance` | Séries temporais, receita por closer/SDR/canal, funil, centros de custo |
 | `/executivo` | ARR, churn, LTV, LTV/CAC, forecast, burn, runway, diagnóstico |
 | `/vendas` | Vendas com comissões e economia unitária |
@@ -95,8 +95,10 @@ colunas cada tela mostra), o calendário próprio nos campos de data, o menu em 
 recolhíveis, o **cadastro com fila de aprovação** e o **CRM de leads** — que fez a taxa
 de conversão do funil passar a ser apurada em vez de digitada.
 
-Fase 9 — persistência no Supabase — está escrita em `supabase/migrations/0001_init.sql`
-(com RLS espelhando a matriz de permissões) mas ainda não executada. É o próximo passo.
+Fase 9 — persistência no Supabase — **está executada**: o provider `src/data/supabase/`
+roda contra os mesmos contratos e as migrations `0001`–`0010` foram aplicadas num projeto
+real (RLS espelhando a matriz de permissões). Com `VITE_DATA_PROVIDER=supabase` os dados
+são do servidor; sem `.env`, o app volta ao IndexedDB por dispositivo. Ver `CLAUDE.md` §8.
 
 ---
 

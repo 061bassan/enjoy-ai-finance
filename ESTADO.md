@@ -49,7 +49,7 @@ não invalida o cache delas. O Recharts (115 kB gzip) só baixa ao abrir uma tel
 
 | Rota | Módulo |
 |---|---|
-| `/` | Dashboard — 20 KPIs, alertas automáticos, meta do mês, gráficos |
+| `/` | Dashboard — 18 KPIs, alertas automáticos, meta do mês, gráficos |
 | `/performance` | Séries temporais, receita por closer/SDR/canal, funil, centros de custo |
 | `/executivo` | ARR, churn, LTV, LTV/CAC, forecast, burn, runway, diagnóstico de saúde |
 | `/vendas` | Vendas com closer, SDR, origem, modelo, comissões e economia unitária |
