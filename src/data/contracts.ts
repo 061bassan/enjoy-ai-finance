@@ -122,6 +122,28 @@ export interface AuthGateway {
    */
   listAccountsWithoutPassword?(): Promise<string[]>
 
+  /**
+   * Dispara o e-mail de redefinição de senha.
+   *
+   * Opcional porque só existe onde há servidor de e-mail: no Supabase. No modo
+   * local não há para onde mandar o link (a senha é PBKDF2 no IndexedDB do
+   * próprio dispositivo), então o método fica ausente e a tela esconde o
+   * caminho. Nunca revela se o e-mail tem conta — devolver sucesso sempre é o
+   * que impede usar a tela para descobrir quem está cadastrado.
+   */
+  requestPasswordReset?(email: string): Promise<void>
+
+  /**
+   * Fecha a redefinição: usa os tokens do link recebido por e-mail para abrir
+   * a sessão de recuperação, grava a senha nova e devolve a sessão já ativa.
+   * Par do `requestPasswordReset` — existe só no Supabase.
+   */
+  completePasswordReset?(input: {
+    accessToken: string
+    refreshToken: string
+    newPassword: string
+  }): Promise<Session>
+
   signOut(): Promise<void>
   /** Troca o workspace ativo da sessão, revalidando o papel do usuário. */
   switchWorkspace(workspaceId: Id): Promise<Session>

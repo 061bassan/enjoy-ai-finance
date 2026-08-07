@@ -230,6 +230,53 @@ export class SupabaseAuth implements AuthGateway {
     )
   }
 
+  /**
+   * Manda o e-mail com o link de redefinição.
+   *
+   * `redirectTo` precisa estar na lista de URLs permitidas do projeto (Auth →
+   * URL Configuration). O Supabase devolve sucesso mesmo para e-mail sem conta
+   * — de propósito: a tela não pode virar um detector de quem está cadastrado.
+   */
+  async requestPasswordReset(email: string): Promise<void> {
+    const redirectTo = `${window.location.origin}/redefinir-senha`
+    const { error } = await this.client.auth.resetPasswordForEmail(normalizeEmail(email), {
+      redirectTo,
+    })
+    if (error) throw new AuthError(AUTH_ERROR.invalidCredentials, error.message)
+  }
+
+  /**
+   * Fecha a redefinição. O link do e-mail traz `access_token`/`refresh_token`
+   * de recuperação no fragmento da URL; como o cliente não os consome sozinho
+   * (`detectSessionInUrl: false`), a tela os extrai e passa aqui. Abrimos a
+   * sessão com eles, gravamos a senha nova e devolvemos a sessão já ativa — a
+   * pessoa entra direto, sem digitar a senha recém-criada.
+   */
+  async completePasswordReset(input: {
+    accessToken: string
+    refreshToken: string
+    newPassword: string
+  }): Promise<Session> {
+    const { error: sessionError } = await this.client.auth.setSession({
+      access_token: input.accessToken,
+      refresh_token: input.refreshToken,
+    })
+    if (sessionError) {
+      throw new AuthError(AUTH_ERROR.noSession, 'O link de redefinição expirou ou é inválido.')
+    }
+
+    const { data, error } = await this.client.auth.updateUser({ password: input.newPassword })
+    if (error || !data.user) {
+      throw new AuthError(AUTH_ERROR.invalidCredentials, error?.message ?? 'Não foi possível gravar a senha.')
+    }
+
+    const session = await this.buildSession(data.user.id)
+    if (!session) {
+      throw new AuthError(AUTH_ERROR.noWorkspace, 'Senha alterada, mas sem vínculo com um espaço.')
+    }
+    return session
+  }
+
   async signOut(): Promise<void> {
     localStorage.removeItem(ACTIVE_WS_KEY)
     await this.client.auth.signOut()
