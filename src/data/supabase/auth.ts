@@ -265,16 +265,30 @@ export class SupabaseAuth implements AuthGateway {
       throw new AuthError(AUTH_ERROR.noSession, 'O link de redefinição expirou ou é inválido.')
     }
 
-    const { data, error } = await this.client.auth.updateUser({ password: input.newPassword })
-    if (error || !data.user) {
-      throw new AuthError(AUTH_ERROR.invalidCredentials, error?.message ?? 'Não foi possível gravar a senha.')
-    }
+    // A partir daqui existe uma sessão de recuperação PERSISTIDA (localStorage).
+    // Se qualquer passo abaixo falhar, ela precisa ser encerrada: sem isso, um
+    // reload leria a sessão pendurada e concederia acesso "por baixo" — apesar
+    // de a tela ter reportado falha e a senha não ter mudado. Quem clicou no
+    // link provou posse do e-mail, mas trocar a senha é o que este fluxo exige.
+    try {
+      const { data, error } = await this.client.auth.updateUser({ password: input.newPassword })
+      if (error || !data.user) {
+        // O erro mais comum é digitar a senha que já se tinha.
+        const friendly = /different|should be different/i.test(error?.message ?? '')
+          ? 'A nova senha precisa ser diferente da atual.'
+          : (error?.message ?? 'Não foi possível gravar a senha.')
+        throw new AuthError(AUTH_ERROR.invalidCredentials, friendly)
+      }
 
-    const session = await this.buildSession(data.user.id)
-    if (!session) {
-      throw new AuthError(AUTH_ERROR.noWorkspace, 'Senha alterada, mas sem vínculo com um espaço.')
+      const session = await this.buildSession(data.user.id)
+      if (!session) {
+        throw new AuthError(AUTH_ERROR.noWorkspace, 'Senha alterada, mas sem vínculo com um espaço.')
+      }
+      return session
+    } catch (cause) {
+      await this.client.auth.signOut()
+      throw cause
     }
-    return session
   }
 
   async signOut(): Promise<void> {

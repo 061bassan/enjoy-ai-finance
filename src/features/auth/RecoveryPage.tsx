@@ -35,7 +35,7 @@ function readRecoveryTokens(): { tokens: RecoveryTokens | null; errorDescription
 
   // Link expirado/já usado volta como erro no próprio hash.
   const error = params.get('error_description') ?? params.get('error')
-  if (error) return { tokens: null, errorDescription: error.replace(/\+/g, ' ') }
+  if (error) return { tokens: null, errorDescription: error }
 
   const accessToken = params.get('access_token')
   const refreshToken = params.get('refresh_token')
@@ -50,8 +50,8 @@ export function RecoveryPage() {
   const { canResetPassword, completePasswordReset } = useSession()
   const navigate = useNavigate()
 
-  // Lê o hash uma vez só: o `completePasswordReset` limpa a sessão/URL e reler
-  // depois devolveria vazio, fazendo a tela piscar "link inválido".
+  // Lê o hash uma vez só, no init: o efeito abaixo limpa o fragmento da URL, e
+  // reler depois devolveria vazio — a tela piscaria "link inválido".
   const [{ tokens, errorDescription }] = React.useState(readRecoveryTokens)
 
   const [password, setPassword] = React.useState('')
@@ -59,6 +59,13 @@ export function RecoveryPage() {
   const [fieldError, setFieldError] = React.useState<string | null>(null)
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
+
+  // Higiene de token: tira o access_token/refresh_token da barra de endereço
+  // assim que capturados. Sem isso o token fica visível — e ainda válido —
+  // enquanto a pessoa digita a senha nova (shoulder-surfing, cópia acidental).
+  React.useEffect(() => {
+    if (tokens) window.history.replaceState(null, '', window.location.pathname)
+  }, [tokens])
 
   // Modo sem e-mail (local) não tem para onde este link apontar.
   if (!canResetPassword) return <Navigate to="/login" replace />
