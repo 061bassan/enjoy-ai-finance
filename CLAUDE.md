@@ -348,11 +348,12 @@ O provider `src/data/supabase/` está implementado contra os mesmos contratos, e
 migrations `0001`–`0007` foram aplicadas num projeto real. **Nenhum arquivo de
 `src/features/` mudou por causa da troca** — o critério de sucesso foi cumprido.
 
-> **Atenção — migrations `0008`–`0010` ainda precisam ser aplicadas em produção.** Elas
-> corrigem dois furos de segurança (leitura do financeiro pelo `sales`; PII do perfil
-> exposto a qualquer membro) e adicionam o marcador de direção da transferência. Rode
-> `scripts/apply-migrations.mjs` no projeto para aplicá-las — sem isso, o RLS antigo
-> continua valendo no servidor.
+> **Atenção — migrations `0008`–`0011` ainda precisam ser aplicadas em produção.** Elas
+> corrigem três furos de segurança (leitura do financeiro pelo `sales`; PII do perfil
+> exposto a qualquer membro; `move_lead_stage` sem autorização) e adicionam o marcador de
+> direção da transferência. Rode `scripts/apply-migrations.mjs` no projeto para aplicá-las
+> — sem isso, o RLS antigo continua valendo no servidor. Todas são idempotentes
+> (`drop policy if exists`, `create or replace`, `add column if not exists`).
 
 As migrations (`supabase/migrations/`):
 
@@ -377,6 +378,10 @@ As migrations (`supabase/migrations/`):
 - `0010_profile_pii.sql` — **correção de LGPD**: view `profiles_directory` que mascara
   CPF/telefone/nascimento para quem não é gatekeeper, e fecha o SELECT direto de `profiles`
   ao próprio dono. O app lê nomes pela view; só quem libera acesso vê o PII.
+- `0011_move_lead_authz.sql` — **correção de autorização**: a RPC `move_lead_stage` era
+  `SECURITY DEFINER` sem checar quem chama (qualquer autenticado movia qualquer lead).
+  Ganhou guard espelhando a matriz (finance+ move qualquer lead; `sales` só o próprio;
+  `viewer` nenhum). Fecha também a leitura de `activity_log` para o `sales`.
 
 **Decisão-chave (a razão de as RPC serem finas):** a matemática (parcelamento em
 `buildReceivables`, status em `persistedStatus`, recorrência em `occurrencesBetween`) roda
