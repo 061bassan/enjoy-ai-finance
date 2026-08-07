@@ -92,12 +92,26 @@ const FINANCE: Permission[] = [
   'export:reports',
 ]
 
-const ADMIN: Permission[] = [...FINANCE, 'manage:members', 'manage:workspace']
+/**
+ * `admin` opera tudo, mas NÃO libera acessos — gerenciar membros é da alçada
+ * de `owner`/`ceo`. É o que sustenta a cadeia "Desenvolvedor libera o CEO, o
+ * CEO libera o resto": o portão de entrada tem só dois donos.
+ */
+const ADMIN: Permission[] = [...FINANCE, 'manage:workspace']
 
-const OWNER: Permission[] = [...ADMIN, 'delete:workspace']
+/** `ceo` = admin + o portão de acessos. Faz tudo do negócio, menos destruir o espaço. */
+const CEO: Permission[] = [...ADMIN, 'manage:members']
+
+/** `socio` é par do `ceo`: mesmas permissões. A diferença é só o rótulo. */
+const SOCIO: Permission[] = CEO
+
+/** `owner` (rótulo "Desenvolvedor") = CEO + a única tecla destrutiva. */
+const OWNER: Permission[] = [...CEO, 'delete:workspace']
 
 export const PERMISSIONS: Record<Role, readonly Permission[]> = {
   owner: OWNER,
+  ceo: CEO,
+  socio: SOCIO,
   admin: ADMIN,
   finance: FINANCE,
   sales: SALES,
@@ -127,10 +141,18 @@ export function canSeeAllLeads(role: Role | undefined): boolean {
   return can(role, 'view:leads:all')
 }
 
-/** Papéis que um usuário com este papel pode atribuir a outra pessoa. */
+/**
+ * Papéis que um usuário com este papel pode atribuir a outra pessoa.
+ *
+ * A regra é "só concede o que está estritamente abaixo de você": ninguém
+ * promove alguém ao próprio nível ou acima. Só o `owner` (Desenvolvedor)
+ * concede `ceo`; o `ceo` concede `admin` e abaixo. `admin` não gerencia
+ * membros, então não concede nada.
+ */
 export function assignableRoles(role: Role | undefined): Role[] {
-  if (role === 'owner') return ['admin', 'finance', 'sales', 'viewer']
-  if (role === 'admin') return ['finance', 'sales', 'viewer']
+  if (role === 'owner') return ['ceo', 'socio', 'admin', 'finance', 'sales', 'viewer']
+  // ceo e socio são pares: concedem admin-e-abaixo, mas não um ao outro.
+  if (role === 'ceo' || role === 'socio') return ['admin', 'finance', 'sales', 'viewer']
   return []
 }
 

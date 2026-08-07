@@ -680,8 +680,9 @@ function DataTab({ workspaceId }: { workspaceId: string }) {
       <Card className="p-4">
         <h3 className="text-sm font-medium">Backup</h3>
         <p className="mt-1 text-sm text-muted-foreground">
-          Os dados vivem no navegador (IndexedDB) enquanto o Supabase não entra. Limpar os dados do
-          site apaga tudo — exporte antes.
+          {data.kind === 'supabase'
+            ? 'Baixe uma cópia completa deste espaço em JSON, ou restaure a partir de um arquivo. Seus dados ficam guardados no banco na nuvem — o backup é só uma cópia extra.'
+            : 'Baixe uma cópia em JSON ou restaure de um arquivo. Neste modo os dados ficam só neste navegador, então exporte antes de limpar o site.'}
         </p>
         <Separator className="my-4" />
         <div className="flex flex-wrap gap-2">
@@ -705,30 +706,37 @@ function DataTab({ workspaceId }: { workspaceId: string }) {
         </div>
       </Card>
 
-      <Card className="border-negative/30 p-4">
-        <h3 className="text-sm font-medium">Recomeçar do zero</h3>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Apaga todos os dados deste navegador, inclusive as contas de acesso. Não há desfazer.
-        </p>
-        <Separator className="my-4" />
-        <Button variant="destructive" onClick={() => setResetOpen(true)}>
-          <Trash2 /> Apagar dados locais
-        </Button>
-      </Card>
+      {/* "Recomeçar do zero" é conceito de modo local: apaga o IndexedDB deste
+          navegador. No Supabase os dados vivem no servidor e são compartilhados
+          pelo time — `reset()` nem é implementado lá, então o bloco some. */}
+      {data.kind === 'local' && (
+        <>
+          <Card className="border-negative/30 p-4">
+            <h3 className="text-sm font-medium">Recomeçar do zero</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Apaga todos os dados deste navegador, inclusive as contas de acesso. Não há desfazer.
+            </p>
+            <Separator className="my-4" />
+            <Button variant="destructive" onClick={() => setResetOpen(true)}>
+              <Trash2 /> Apagar dados locais
+            </Button>
+          </Card>
 
-      <ConfirmDialog
-        open={resetOpen}
-        onOpenChange={setResetOpen}
-        destructive
-        title="Apagar todos os dados locais"
-        description="Lançamentos, vendas, leads e contas de acesso deste navegador serão removidos. Exporte um backup antes se quiser guardar algo."
-        confirmationText="APAGAR"
-        confirmLabel="Apagar tudo"
-        onConfirm={async () => {
-          await data.reset?.()
-          window.location.reload()
-        }}
-      />
+          <ConfirmDialog
+            open={resetOpen}
+            onOpenChange={setResetOpen}
+            destructive
+            title="Apagar todos os dados locais"
+            description="Lançamentos, vendas, leads e contas de acesso deste navegador serão removidos. Exporte um backup antes se quiser guardar algo."
+            confirmationText="APAGAR"
+            confirmLabel="Apagar tudo"
+            onConfirm={async () => {
+              await data.reset?.()
+              window.location.reload()
+            }}
+          />
+        </>
+      )}
     </div>
   )
 }

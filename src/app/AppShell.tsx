@@ -23,6 +23,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
+import { data } from '@/data'
 import { ROLE_LABEL } from '@/data/enums'
 import { pendingRequests } from '@/domain/membership'
 import { useMembers } from '@/hooks/data'
@@ -314,7 +315,7 @@ export function AppShell() {
         <SidebarNav onNavigate={() => setMobileOpen(false)} />
         <div className="border-t border-border px-4 py-3">
           <p className="text-[10px] leading-relaxed text-muted-foreground/60">
-            Dados salvos neste navegador
+            {data.kind === 'supabase' ? 'Dados salvos na nuvem' : 'Dados salvos neste navegador'}
           </p>
         </div>
       </aside>

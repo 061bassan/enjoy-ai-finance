@@ -194,7 +194,9 @@ export const MEMBER_STATUS_LABEL: Record<MemberStatus, string> = {
 }
 
 export const ROLE_LABEL: Record<Role, string> = {
-  owner: 'Dono',
+  owner: 'Desenvolvedor',
+  ceo: 'CEO',
+  socio: 'Sócio',
   admin: 'Administrador',
   finance: 'Financeiro',
   sales: 'Comercial',
@@ -202,8 +204,10 @@ export const ROLE_LABEL: Record<Role, string> = {
 }
 
 export const ROLE_DESCRIPTION: Record<Role, string> = {
-  owner: 'Faz tudo, inclusive apagar o espaço da empresa.',
-  admin: 'Faz tudo no dia a dia e controla quem entra na equipe.',
+  owner: 'Faz tudo, inclusive apagar o espaço da empresa. É o primeiro acesso e libera Sócios e CEOs.',
+  ceo: 'Comanda o negócio e libera quem entra na equipe. Não apaga o espaço.',
+  socio: 'Sócio do negócio. Mesmos poderes do CEO: opera tudo e libera novos acessos.',
+  admin: 'Faz tudo no dia a dia e nas configurações. Não libera novos acessos.',
   finance: 'Cuida de todo o dinheiro. Não mexe na equipe.',
   sales: 'Lança as próprias vendas e o dia a dia comercial. Não vê os custos da empresa.',
   viewer: 'Só olha. Não altera nada.',

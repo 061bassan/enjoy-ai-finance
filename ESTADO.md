@@ -150,21 +150,23 @@ sendo trabalho de hoje. O período recorta as métricas, não a carteira.
 
 1. **Importação CSV de transações** — `src/lib/csv.ts` já tem o `parseCsv`; falta a tela
    de mapeamento de colunas.
-2. **Fase 9 — Supabase.** `supabase/migrations/0001_init.sql` está escrito com RLS
-   espelhando `src/data/rules/permissions.ts`, mas **ainda não foi executado**.
-   Para migrar: rodar a migration, implementar `src/data/supabase/` contra os mesmos
-   contratos, trocar `VITE_DATA_PROVIDER=supabase`.
+2. ~~**Fase 9 — Supabase.**~~ — **FEITA.** `src/data/supabase/` implementado contra os
+   mesmos contratos; migrations `0001`–`0007` aplicadas num projeto real; app roda na
+   nuvem com `VITE_DATA_PROVIDER=supabase`. **Nenhum arquivo de `src/features/` mudou.**
+   Inclui os cargos `ceo`/`socio` (pares, gatekeepers) e o `owner` rotulado
+   "Desenvolvedor". Detalhes no CLAUDE.md §4 e §8.
 3. ~~**Code splitting**~~ — **feito.** Todas as rotas estão em `React.lazy`
    (`src/app/routes.tsx`) e o carregamento inicial caiu para ~180 kB gzip.
 4. **Insights com LLM** — hoje o "AI" do nome se apoia em heurísticas (alertas do
    dashboard, diagnóstico executivo, projeções de meta e de compra).
 5. **Testes de componente** — só lógica é testada (domínio, provider local, validações).
    Exigiria `jsdom` no Vitest.
-6. **`convert_lead_to_sale` no Postgres** — a única operação atômica sem equivalente na
-   migration. Precisa gerar os títulos com a mesma regra de `buildReceivables`, e
-   escrever essa lógica duas vezes garante divergência. Ver CLAUDE.md §8.
-7. **Recuperação de senha** — não existe no modo local: sem servidor não há e-mail para
-   enviar link. Chega junto com o Supabase Auth.
+6. ~~**`convert_lead_to_sale` no Postgres**~~ — **feito**, mas por outro caminho: em vez
+   de portar `buildReceivables` para PL/pgSQL (o que garantiria divergência), a regra
+   ficou só em TS e a RPC `op_convert_lead` apenas persiste as linhas prontas. Ver
+   CLAUDE.md §8.
+7. **Recuperação de senha** — no modo local não existe (sem servidor, sem e-mail). No
+   Supabase, usar a recuperação por e-mail do próprio Auth.
 
 > Para continuar o trabalho, leia [`CLAUDE.md`](./CLAUDE.md) — traz a arquitetura, as
 > invariantes e o roteiro da Fase 9 em detalhe.

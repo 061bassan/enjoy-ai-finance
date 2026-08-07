@@ -27,9 +27,11 @@ Ver §8 se a intenção for mudar isso.
 ### Estado atual
 
 Fases 1–8 concluídas, mais a personalização visual pelo sócio, o **cadastro com fila de
-aprovação** e o **CRM de leads**. Produto completo e utilizável, **sem dados de exemplo**,
-rodando 100% no navegador (IndexedDB). A fase 9 — persistência real no Supabase — está
-**escrita mas não executada**. É o próximo grande passo.
+aprovação**, o **CRM de leads** e — agora — a **Fase 9 (Supabase) EXECUTADA**. O provider
+`src/data/supabase/` está implementado contra os mesmos contratos, as migrations
+`0001`–`0007` foram aplicadas num projeto real, e o app roda na nuvem quando
+`VITE_DATA_PROVIDER=supabase` (ver §8). O provider local (IndexedDB) continua existindo e
+é o padrão sem `.env`. Produto completo e utilizável, **sem dados de exemplo**.
 
 | Verificação | Estado |
 |---|---|
@@ -195,16 +197,26 @@ período e personalização — que ficam em `src/app/` e `src/customization/` v
 ### `src/data/rules/permissions.ts` — matriz de papéis
 
 Fonte única de verdade. A UI usa `can()` para esconder botões e bloquear rotas, e as
-políticas RLS em `supabase/migrations/0001_init.sql` são o **espelho exato** desta tabela.
-Mudou uma linha aqui? A migration muda junto.
+políticas RLS nas migrations (`0001` + `0006`/`0007` para os cargos) são o **espelho
+exato** desta tabela. Mudou uma linha aqui? A migration muda junto.
 
-> No modo local isto é a única barreira — e barreira de cliente **não é segurança**, é
-> ergonomia. A segurança real chega com o RLS.
+> No modo local a matriz é a única barreira — e barreira de cliente **não é segurança**, é
+> ergonomia. No Supabase a segurança real é o RLS, que espelha esta matriz no servidor.
 
-Poder decrescente: `owner` › `admin` › `finance` › `sales` › `viewer`. O papel `sales`
-(closer/SDR) vê e edita **só o que é seu**, e não enxerga custo da empresa nem o
-dashboard executivo. O filtro "apenas meus registros" mora nos **repositórios**, não na
-matriz — a matriz guarda só a capacidade.
+Poder decrescente: `owner` › `ceo` = `socio` › `admin` › `finance` › `sales` › `viewer`.
+
+- **`owner`** é rotulado **"Desenvolvedor"** na UI (ver `ROLE_LABEL`): o fundador técnico,
+  primeiro cadastro, único que apaga o workspace. É o topo da cadeia de liberação.
+- **`ceo`** e **`socio`** são **pares** (mesma patente, mesmas permissões): comandam o
+  negócio e **liberam acessos**. Um não nomeia nem rebaixa o outro; só o `owner` gerencia
+  os dois. `role_rank` no SQL define a patente; a regra é "só concede/gerencia quem está
+  abaixo de você".
+- **`admin`** opera todos os dados e configurações, mas **NÃO libera acessos** — o portão
+  de entrada tem só três donos (owner/ceo/socio). É o que sustenta "Desenvolvedor libera
+  o CEO/Sócio, e eles liberam o resto".
+- **`sales`** (closer/SDR) vê e edita **só o que é seu**, e não enxerga custo da empresa
+  nem o dashboard executivo. O filtro "apenas meus registros" mora nos **repositórios**,
+  não na matriz — a matriz guarda só a capacidade.
 
 ---
 
@@ -325,41 +337,49 @@ Cada provider implementa com a transação nativa (Dexie hoje, RPC no Postgres d
 
 ## 8. O que fazer em seguida
 
-### Fase 9 — Supabase (o próximo passo real)
+### Fase 9 — Supabase (FEITA)
 
-Duas migrations escritas, **nenhuma executada**:
+O provider `src/data/supabase/` está implementado contra os mesmos contratos, e as sete
+migrations foram aplicadas num projeto real. **Nenhum arquivo de `src/features/` mudou por
+causa da troca** — o critério de sucesso foi cumprido.
 
-- `supabase/migrations/0001_init.sql` — schema base, RLS espelhando
-  `src/data/rules/permissions.ts`.
-- `supabase/migrations/0002_auth_and_leads.sql` — dados pessoais no perfil, estados
-  `pending`/`rejected` no vínculo, tabelas `leads` e `lead_activities`, o trigger
-  `handle_new_user` (materializa o perfil a partir do `auth.users`) e as funções RPC
-  `approve_member`, `reject_member`, `move_lead_stage`.
+As migrations (`supabase/migrations/`):
 
-Roteiro:
+- `0001_init.sql` — schema base (24 tabelas), RLS espelhando `permissions.ts`.
+- `0002_auth_and_leads.sql` — dados pessoais no perfil, estados `pending`/`rejected`,
+  `leads`/`lead_activities`, trigger `handle_new_user`, RPCs `approve_member`,
+  `reject_member`, `move_lead_stage`.
+- `0003_customizations.sql` — tabela `customizations` (faltava por completo).
+- `0004_operations.sql` — as operações atômicas como RPC **finas**: recebem as linhas já
+  calculadas em TS e só as persistem (`op_settle_bill`, `op_create_sale`,
+  `op_convert_lead`, …). Ver abaixo.
+- `0005_bootstrap.sql` — estende `handle_new_user` para **semear o esqueleto** no primeiro
+  cadastro (o primeiro dono não consegue criar o próprio espaço pela UI por causa do RLS).
+- `0006_role_ceo.sql` / `0007_role_socio.sql` — cargos `ceo` e `socio`, `role_rank`, e as
+  regras de gatekeeper (ver §4).
 
-1. Criar o projeto no Supabase e rodar as duas migrations, nesta ordem.
-2. Implementar `src/data/supabase/` contra os **mesmos contratos** — `repository.ts`,
-   `auth.ts`, `operations.ts` (as atômicas chamam as RPC acima).
-3. Escrever `convert_lead_to_sale` no Postgres. **Ela ficou de fora da 0002 de
-   propósito**: precisa gerar os títulos com exatamente a mesma regra de
-   `buildReceivables` (setup + uma parcela por mês, resto nas primeiras). Escrever a
-   lógica duas vezes garante divergência — uma venda vinda do CRM parcelaria diferente
-   de uma digitada, e ninguém descobriria porque os dois caminhos parecem certos
-   sozinhos. O caminho é uma função só, chamada pelos dois fluxos.
-4. Preencher `.env` e trocar `VITE_DATA_PROVIDER=supabase`.
-5. Migrar os dados locais com `exportWorkspace` → `importWorkspace`. Lembre que o
-   backup não leva senha: cada pessoa define a dela no primeiro acesso.
-6. `src/lib/password.ts` sai — quem guarda credencial passa a ser o `auth.users`.
+**Decisão-chave (a razão de as RPC serem finas):** a matemática (parcelamento em
+`buildReceivables`, status em `persistedStatus`, recorrência em `occurrencesBetween`) roda
+**uma vez só, em TypeScript** (`src/data/receivables.ts` + `@/domain`), e é a MESMA que o
+provider local usa. O Supabase calcula as linhas e manda prontas para a RPC, que só
+escreve em transação. Foi assim que `convert_lead_to_sale` — adiada na 0002 exatamente por
+esse risco de divergência — passou a funcionar sem reescrever a regra em PL/pgSQL.
 
-Critério de sucesso: **nenhum arquivo de `src/features/` no diff**.
+**Rodar as migrations num projeto novo:** `scripts/apply-migrations.mjs` aplica todas em
+ordem via Management API (`SB_REF=… SB_PAT=sbp_… node scripts/apply-migrations.mjs`) ou por
+conexão direta (`SB_DB_URL=…`). Ele separa os `ALTER TYPE … ADD VALUE` numa transação à
+parte — o Postgres proíbe usar um valor de enum novo na mesma transação em que ele nasce
+(a CLI oficial esbarraria no mesmo ponto).
 
-Os testes de `src/data/local/auth.test.ts` e `leadOperations.test.ts` são o contrato que
-o provider novo precisa satisfazer. Se `signUp` no Supabase se comportar diferente do
-local, a diferença aparece ali e não em produção.
+**Setup do projeto:** desligar a confirmação de e-mail (produto de um time só: o cadastro
+precisa entrar direto). `.env` leva só `VITE_SUPABASE_URL` + a `anon key` (pública; a
+proteção é o RLS). Migração de dados locais: `exportWorkspace` (no local) → `importWorkspace`
+(no Supabase), lembrando que cada pessoa precisa ter se cadastrado antes (o perfil referencia
+`auth.users`).
 
-> Há um MCP do Supabase disponível na sessão — dá para listar tabelas, aplicar migration
-> e gerar os tipos TypeScript sem sair do editor.
+Os testes de `src/data/local/*.test.ts` são o contrato que o provider novo satisfaz.
+`src/lib/password.ts` só vale no modo local; no Supabase quem guarda credencial é o
+`auth.users` (e `setInitialPassword`/`listAccountsWithoutPassword` são no-ops lá).
 
 ### Pendências menores
 
@@ -397,10 +417,10 @@ Três coisas a lembrar:
 - **SPA precisa de fallback para `index.html`**, senão `/vendas` dá 404 no reload. A
   Vercel resolve sozinha em projeto Vite; se um dia mudar de serviço, o `netlify.toml`
   guarda a receita.
-- **Enquanto os dados vivem no IndexedDB, cada dispositivo é uma base.** Abrir a URL
-  publicada no celular não mostra o que foi lançado no desktop, e nenhuma configuração de
-  deploy conserta isso — quem conserta é a fase 9. Vale saber disso antes de mostrar a URL
-  para alguém e ouvir "está vazio".
+- **Com o Supabase ligado (`VITE_DATA_PROVIDER=supabase`), os dados são do servidor** —
+  a mesma base em qualquer dispositivo, que é o que destrava o deploy de verdade. Sem
+  `.env` (ou com `VITE_DATA_PROVIDER=local`) o app volta ao IndexedDB por dispositivo,
+  útil para desenvolvimento offline.
 
 ### CI — pendência de permissão
 

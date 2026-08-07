@@ -53,11 +53,15 @@ describe('quem pode decidir', () => {
   const pedido = member({ id: 'p', userId: 'candidato' })
 
   it('permite a quem administra membros', () => {
-    expect(canDecide('owner', 'socio', pedido).allowed).toBe(true)
-    expect(canDecide('admin', 'gestor', pedido).allowed).toBe(true)
+    // Desenvolvedor (owner), CEO e Sócio liberam acessos — os três gatekeepers.
+    expect(canDecide('owner', 'dev', pedido).allowed).toBe(true)
+    expect(canDecide('ceo', 'ceo', pedido).allowed).toBe(true)
+    expect(canDecide('socio', 'socio', pedido).allowed).toBe(true)
   })
 
   it('nega a quem não administra membros', () => {
+    // Admin opera tudo, mas não é gatekeeper: liberar acesso é de owner/ceo.
+    expect(canDecide('admin', 'gestor', pedido).allowed).toBe(false)
     expect(canDecide('finance', 'fin', pedido).allowed).toBe(false)
     expect(canDecide('sales', 'closer', pedido).allowed).toBe(false)
     expect(canDecide('viewer', 'visita', pedido).allowed).toBe(false)
@@ -83,15 +87,25 @@ describe('quem pode decidir', () => {
 })
 
 describe('cargos concedíveis', () => {
-  it('dono concede tudo abaixo de dono', () => {
-    expect(grantableRoles('owner')).toEqual<Role[]>(['admin', 'finance', 'sales', 'viewer'])
+  it('Desenvolvedor concede tudo abaixo — inclusive CEO e Sócio', () => {
+    expect(grantableRoles('owner')).toEqual<Role[]>([
+      'ceo',
+      'socio',
+      'admin',
+      'finance',
+      'sales',
+      'viewer',
+    ])
   })
 
-  it('administrador não cria outro administrador', () => {
-    expect(grantableRoles('admin')).toEqual<Role[]>(['finance', 'sales', 'viewer'])
+  it('CEO e Sócio concedem admin e abaixo, mas não um ao outro (pares)', () => {
+    expect(grantableRoles('ceo')).toEqual<Role[]>(['admin', 'finance', 'sales', 'viewer'])
+    expect(grantableRoles('socio')).toEqual<Role[]>(['admin', 'finance', 'sales', 'viewer'])
   })
 
-  it('quem não administra não concede nada', () => {
+  it('quem não administra membros não concede nada', () => {
+    // Admin não é gatekeeper; finance/viewer muito menos.
+    expect(grantableRoles('admin')).toEqual([])
     expect(grantableRoles('finance')).toEqual([])
     expect(grantableRoles(undefined)).toEqual([])
   })

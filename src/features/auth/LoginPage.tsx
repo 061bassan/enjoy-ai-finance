@@ -17,9 +17,11 @@ import { data } from '@/data'
 import { AUTH_ERROR, isAuthError } from '@/data/errors'
 import { ROLE_DESCRIPTION, ROLE_LABEL } from '@/data/enums'
 import type { Role } from '@/data/types'
+import { today } from '@/lib/date'
 import { useSession } from '@/app/session'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { DateField } from '@/components/DateField'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
@@ -37,7 +39,7 @@ import { Label } from '@/components/ui/label'
  * Os cargos que aparecem na escolha excluem "Dono" de propósito: dono é quem
  * criou o espaço, não é algo que se peça num formulário.
  */
-const REQUESTABLE_ROLES: Role[] = ['admin', 'finance', 'sales', 'viewer']
+const REQUESTABLE_ROLES: Role[] = ['ceo', 'socio', 'admin', 'finance', 'sales', 'viewer']
 
 type Mode = 'entrar' | 'criar' | 'definir-senha'
 
@@ -388,15 +390,16 @@ function SignUpForm({ onBack }: { onBack: () => void }) {
         </Field>
 
         <Field id="signup-birth" label="Data de nascimento" error={errors.birthDate}>
-          {/* `type=date` nativo em vez do calendário próprio: escolher uma
-              data de nascimento exige navegar décadas para trás, e o seletor
-              nativo do sistema faz isso melhor que qualquer calendário nosso. */}
-          <Input
+          {/* DateField, não `type=date` nativo: o calendário nativo vive no
+              shadow DOM e ignora todo token do tema — era o controle que
+              destoava do resto da tela. O DateField mantém o que importa numa
+              data de nascimento: dá para DIGITAR (05/03/1990) sem navegar
+              décadas no calendário, e ainda respeita o design. */}
+          <DateField
             id="signup-birth"
-            type="date"
-            value={birthDate}
-            onChange={(event) => setBirthDate(event.target.value)}
-            autoComplete="bday"
+            value={birthDate || null}
+            max={today()}
+            onChange={setBirthDate}
           />
         </Field>
       </div>

@@ -1,7 +1,8 @@
-import { addMonths, fromIsoDate, nowIso, toIsoDate, type IsoDate } from '@/lib/date'
-import { splitCents, sumCents } from '@/lib/money'
+import { nowIso, toIsoDate, type IsoDate } from '@/lib/date'
+import { sumCents } from '@/lib/money'
 import { persistedStatus } from '@/domain/bills'
 import { occurrencesBetween } from '@/domain/recurrence'
+import { buildReceivables } from '../receivables'
 import type { NewEntity, Operations } from '../contracts'
 import type {
   Bill,
@@ -157,87 +158,11 @@ export class LocalOperations implements Operations {
 
       if (!input.generateReceivables) return { sale, bills: [] }
 
-      const bills = this.buildReceivables(sale, input.firstDueDate)
+      const bills = buildReceivables(sale, input.firstDueDate, stampNew, newId())
       if (bills.length) await db.bills.bulkAdd(bills)
 
       return { sale, bills }
     })
-  }
-
-  /**
-   * Desenha os títulos a receber de uma venda.
-   *
-   * Puro e sem I/O de propósito: `createSaleWithReceivables` e
-   * `convertLeadToSale` precisam gerar exatamente os mesmos títulos, e uma
-   * venda vinda do CRM que parcelasse diferente de uma venda digitada à mão
-   * seria um bug impossível de achar — os dois caminhos parecem certos
-   * quando olhados separadamente.
-   */
-  private buildReceivables(sale: Sale, firstDueDate?: IsoDate): Bill[] {
-    const firstDue = firstDueDate ?? sale.saleDate
-    const groupId = newId()
-    const drafts: NewEntity<Bill>[] = []
-
-    const base = {
-      workspaceId: sale.workspaceId,
-      direction: 'receivable' as const,
-      partyName: sale.clientName,
-      clientId: sale.clientId,
-      categoryId: null,
-      costCenter: null,
-      status: 'open' as const,
-      saleId: sale.id,
-      installmentGroupId: groupId,
-      createdBy: sale.createdBy,
-      issueDate: sale.saleDate,
-    }
-
-    if (sale.setupCents > 0) {
-      drafts.push({
-        ...base,
-        description: `Implantação — ${sale.clientName}`,
-        amountCents: sale.setupCents,
-        dueDate: firstDue,
-        installmentNumber: null,
-        installmentTotal: null,
-      })
-    }
-
-    if (sale.mrrCents > 0) {
-      const months = Math.max(1, sale.contractMonths ?? 12)
-      for (let i = 0; i < months; i++) {
-        drafts.push({
-          ...base,
-          description: `Mensalidade ${i + 1}/${months} — ${sale.clientName}`,
-          amountCents: sale.mrrCents,
-          dueDate: toIsoDate(addMonths(fromIsoDate(firstDue), i)),
-          installmentNumber: i + 1,
-          installmentTotal: months,
-        })
-      }
-    }
-
-    // Modelos sem recorrência: o valor do contrato menos o que já virou setup.
-    const oneOffTotal = sale.mrrCents > 0 ? 0 : sale.amountCents - sale.setupCents
-    if (oneOffTotal > 0) {
-      const parts = Math.max(1, sale.installments || 1)
-      const amounts = splitCents(oneOffTotal, parts)
-      amounts.forEach((amount, i) => {
-        drafts.push({
-          ...base,
-          description:
-            parts > 1
-              ? `${sale.clientName} — parcela ${i + 1}/${parts}`
-              : `${sale.clientName} — ${sale.model}`,
-          amountCents: amount,
-          dueDate: toIsoDate(addMonths(fromIsoDate(firstDue), i)),
-          installmentNumber: parts > 1 ? i + 1 : null,
-          installmentTotal: parts > 1 ? parts : null,
-        })
-      })
-    }
-
-    return drafts.map((draft) => stampNew<Bill>(draft))
   }
 
   /**
@@ -287,7 +212,7 @@ export class LocalOperations implements Operations {
 
       await db.bills.bulkDelete(oldBills.map((bill) => bill.id))
 
-      const bills = this.buildReceivables(sale, input.firstDueDate)
+      const bills = buildReceivables(sale, input.firstDueDate, stampNew, newId())
       if (bills.length) await db.bills.bulkAdd(bills)
 
       return { sale, bills }
@@ -695,7 +620,7 @@ export class LocalOperations implements Operations {
         }
 
         const bills = input.generateReceivables
-          ? this.buildReceivables(sale, input.firstDueDate)
+          ? buildReceivables(sale, input.firstDueDate, stampNew, newId())
           : []
         if (bills.length) await db.bills.bulkAdd(bills)
 

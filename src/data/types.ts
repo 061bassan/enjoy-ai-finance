@@ -76,18 +76,29 @@ export interface Workspace extends BaseEntity {
 /**
  * Papéis, do mais para o menos poderoso:
  *
- * - `owner`   sócio-fundador. Tudo, incluindo excluir o workspace.
- * - `admin`   acesso total aos dados do workspace e à gestão de membros.
- *             É o papel pedido para "visualizar e gerenciar todos os dados
- *             de um único workspace, se for autorizado".
- * - `finance` opera todo o financeiro, sem mexer em membros nem apagar o
- *             workspace.
+ * - `owner`   o fundador técnico — rotulado "Desenvolvedor" na tela (ver
+ *             `ROLE_LABEL`). Faz tudo, inclusive excluir o workspace. É o
+ *             cargo do primeiro cadastro, e o único no topo da cadeia: libera
+ *             o CEO, que então libera o resto.
+ * - `ceo`     executivo do negócio. Gerencia membros (libera acessos) e opera
+ *             tudo, mas NÃO apaga o workspace. Só o `owner` concede este cargo.
+ * - `socio`   sócio do negócio. PAR do `ceo`: mesma patente e mesmas
+ *             permissões — também libera acessos. Um não nomeia nem rebaixa o
+ *             outro; só o `owner` gerencia sócios e CEOs.
+ * - `admin`   operador de confiança: acesso total aos dados e às configurações
+ *             do workspace, mas NÃO gerencia membros — liberar acesso é da
+ *             alçada de `owner`/`ceo`/`socio`.
+ * - `finance` opera todo o financeiro, sem tocar em configurações nem membros.
  * - `sales`   closer/SDR: registra e edita as PRÓPRIAS vendas e o próprio
  *             diário comercial. Não enxerga custos da empresa nem o
  *             dashboard executivo.
  * - `viewer`  somente leitura.
+ *
+ * `ceo` e `socio` são pares: têm a mesma patente. Toda a lógica de "quem
+ * concede/gerencia quem" usa PATENTE (ver `role_rank` no SQL e a ordem em
+ * `assignableRoles`), não a posição neste union.
  */
-export type Role = 'owner' | 'admin' | 'finance' | 'sales' | 'viewer'
+export type Role = 'owner' | 'ceo' | 'socio' | 'admin' | 'finance' | 'sales' | 'viewer'
 
 /**
  * Situação do vínculo de uma pessoa com o workspace.
