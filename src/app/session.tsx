@@ -21,6 +21,14 @@ interface SessionContextValue {
   signIn: (email: string, password: string) => Promise<void>
   signUp: (input: SignUpInput) => Promise<void>
   setInitialPassword: (email: string, password: string) => Promise<void>
+  /** Só o provider com e-mail (Supabase) recupera senha; o local esconde o caminho. */
+  canResetPassword: boolean
+  requestPasswordReset: (email: string) => Promise<void>
+  completePasswordReset: (input: {
+    accessToken: string
+    refreshToken: string
+    newPassword: string
+  }) => Promise<void>
   signOut: () => Promise<void>
   switchWorkspace: (workspaceId: Id) => Promise<void>
   /** Atalho para a matriz de permissões, já ligado ao papel atual. */
@@ -92,6 +100,25 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     [adopt],
   )
 
+  const canResetPassword = typeof data.auth.requestPasswordReset === 'function'
+
+  const requestPasswordReset = React.useCallback(async (email: string) => {
+    if (!data.auth.requestPasswordReset) {
+      throw new Error('Recuperação de senha por e-mail não está disponível neste modo.')
+    }
+    await data.auth.requestPasswordReset(email)
+  }, [])
+
+  const completePasswordReset = React.useCallback(
+    async (input: { accessToken: string; refreshToken: string; newPassword: string }) => {
+      if (!data.auth.completePasswordReset) {
+        throw new Error('Recuperação de senha por e-mail não está disponível neste modo.')
+      }
+      await adopt(await data.auth.completePasswordReset(input))
+    },
+    [adopt],
+  )
+
   /**
    * Relê a sessão do banco.
    *
@@ -144,6 +171,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       signIn,
       signUp,
       setInitialPassword,
+      canResetPassword,
+      requestPasswordReset,
+      completePasswordReset,
       signOut,
       switchWorkspace,
       allow,
@@ -159,6 +189,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       signIn,
       signUp,
       setInitialPassword,
+      canResetPassword,
+      requestPasswordReset,
+      completePasswordReset,
       signOut,
       switchWorkspace,
       allow,

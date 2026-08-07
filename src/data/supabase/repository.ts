@@ -37,14 +37,17 @@ const DATE_COLUMN: Record<string, string | undefined> = {
 export function createSupabaseRepository<T extends { id: Id }>(
   client: SupabaseClient,
   table: string,
-  options: { scoped?: boolean } = {},
+  options: { scoped?: boolean; readFrom?: string } = {},
 ): Repository<T> {
   const scoped = options.scoped ?? true
   const dateColumn = DATE_COLUMN[table]
+  // Leitura pode vir de uma view (ex.: `profiles_directory` mascara o PII);
+  // a escrita sempre vai na tabela-base. Sem `readFrom`, os dois são a tabela.
+  const readTable = options.readFrom ?? table
 
   return {
     async list(workspaceId, query: ListQuery = {}) {
-      let q = client.from(table).select('*')
+      let q = client.from(readTable).select('*')
       if (scoped) q = q.eq('workspace_id', workspaceId)
       if (dateColumn && query.from) q = q.gte(dateColumn, query.from)
       if (dateColumn && query.to) q = q.lte(dateColumn, query.to)
@@ -67,7 +70,7 @@ export function createSupabaseRepository<T extends { id: Id }>(
     },
 
     async get(id) {
-      const { data, error } = await client.from(table).select('*').eq('id', id).maybeSingle()
+      const { data, error } = await client.from(readTable).select('*').eq('id', id).maybeSingle()
       if (error) throw new Error(error.message)
       return data ? fromRow<T>(data) : null
     },
@@ -109,7 +112,7 @@ export function createSupabaseRepository<T extends { id: Id }>(
     },
 
     async findBy(workspaceId, where) {
-      let q = client.from(table).select('*')
+      let q = client.from(readTable).select('*')
       if (scoped) q = q.eq('workspace_id', workspaceId)
       for (const [key, value] of Object.entries(where)) {
         q = q.eq(toSnake(key), value as string | number | boolean)

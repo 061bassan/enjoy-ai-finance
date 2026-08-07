@@ -41,7 +41,7 @@ import { Label } from '@/components/ui/label'
  */
 const REQUESTABLE_ROLES: Role[] = ['ceo', 'socio', 'admin', 'finance', 'sales', 'viewer']
 
-type Mode = 'entrar' | 'criar' | 'definir-senha'
+type Mode = 'entrar' | 'criar' | 'definir-senha' | 'recuperar'
 
 export function LoginPage() {
   const { session, loading } = useSession()
@@ -83,11 +83,18 @@ export function LoginPage() {
                   setMode('definir-senha')
                 }}
                 onWantAccount={() => setMode('criar')}
+                onForgot={(email) => {
+                  setCarriedEmail(email)
+                  setMode('recuperar')
+                }}
               />
             )}
             {mode === 'criar' && <SignUpForm onBack={() => setMode('entrar')} />}
             {mode === 'definir-senha' && (
               <SetPasswordForm initialEmail={carriedEmail} onBack={() => setMode('entrar')} />
+            )}
+            {mode === 'recuperar' && (
+              <ForgotPasswordForm initialEmail={carriedEmail} onBack={() => setMode('entrar')} />
             )}
           </CardContent>
         </Card>
@@ -226,11 +233,13 @@ function FormError({ message }: { message: string | null }) {
 function SignInForm({
   onNeedPassword,
   onWantAccount,
+  onForgot,
 }: {
   onNeedPassword: (email: string) => void
   onWantAccount: () => void
+  onForgot: (email: string) => void
 }) {
-  const { signIn } = useSession()
+  const { signIn, canResetPassword } = useSession()
   const [email, setEmail] = React.useState('')
   const [password, setPassword] = React.useState('')
   const [error, setError] = React.useState<string | null>(null)
@@ -281,6 +290,18 @@ function SignInForm({
           autoComplete="current-password"
         />
       </Field>
+
+      {canResetPassword && (
+        <div className="-mt-1 text-right">
+          <button
+            type="button"
+            onClick={() => onForgot(email)}
+            className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            Esqueci minha senha
+          </button>
+        </div>
+      )}
 
       <FormError message={error} />
 
@@ -607,6 +628,103 @@ function SetPasswordForm({
       <Button type="submit" className="w-full" disabled={busy}>
         {busy && <Loader2 className="animate-spin" />}
         Definir senha e entrar
+      </Button>
+
+      <p className="text-center text-sm text-muted-foreground">
+        <button
+          type="button"
+          onClick={onBack}
+          className="font-medium text-foreground underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          Voltar
+        </button>
+      </p>
+    </form>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Recuperar senha — pedir o link por e-mail
+// ---------------------------------------------------------------------------
+
+function ForgotPasswordForm({
+  initialEmail,
+  onBack,
+}: {
+  initialEmail: string
+  onBack: () => void
+}) {
+  const { requestPasswordReset } = useSession()
+  const [email, setEmail] = React.useState(initialEmail)
+  const [fieldError, setFieldError] = React.useState<string | null>(null)
+  const [error, setError] = React.useState<string | null>(null)
+  const [busy, setBusy] = React.useState(false)
+  const [sent, setSent] = React.useState(false)
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault()
+    setError(null)
+
+    const invalid = validateEmail(email)
+    setFieldError(invalid)
+    if (invalid) return
+
+    setBusy(true)
+    try {
+      await requestPasswordReset(email)
+      // Confirmação neutra de propósito: não dizemos se o e-mail tem conta, para
+      // a tela não virar um detector de quem está cadastrado.
+      setSent(true)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Não foi possível enviar o e-mail.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (sent) {
+    return (
+      <div className="space-y-4">
+        <div>
+          <p className="text-sm font-medium">Verifique seu e-mail</p>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            Se houver uma conta para <span className="font-medium text-foreground">{email}</span>,
+            enviamos um link para redefinir a senha. Ele expira em pouco tempo — abra assim que
+            puder.
+          </p>
+        </div>
+        <Button type="button" variant="outline" className="w-full" onClick={onBack}>
+          Voltar para a entrada
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-4">
+      <div>
+        <p className="text-sm font-medium">Recuperar senha</p>
+        <p className="mt-0.5 text-sm text-muted-foreground">
+          Informe o e-mail do cadastro e enviamos um link para criar uma senha nova.
+        </p>
+      </div>
+
+      <Field id="forgot-email" label="E-mail" error={fieldError}>
+        <Input
+          id="forgot-email"
+          type="email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          autoComplete="email"
+          placeholder="voce@empresa.com.br"
+        />
+      </Field>
+
+      <FormError message={error} />
+
+      <Button type="submit" className="w-full" disabled={busy}>
+        {busy && <Loader2 className="animate-spin" />}
+        Enviar link
       </Button>
 
       <p className="text-center text-sm text-muted-foreground">

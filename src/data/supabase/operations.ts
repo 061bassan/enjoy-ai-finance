@@ -458,11 +458,13 @@ export class SupabaseOperations implements Operations {
       ...common,
       accountId: input.fromAccountId,
       description: `${input.description} (saída)`,
+      transferDirection: 'out',
     })
     const into = stampNew<Transaction>({
       ...common,
       accountId: input.toAccountId,
       description: `${input.description} (entrada)`,
+      transferDirection: 'in',
     })
 
     await this.rpc('op_create_transfer', { p_transactions: [out, into].map(row) })

@@ -86,8 +86,11 @@ export function accountBalance(
   return relevant.reduce((balance, t) => {
     if (t.kind === 'income') return balance + t.amountCents
     if (t.kind === 'expense') return balance - t.amountCents
-    // Transferência: o sinal depende de a conta ser origem ou destino, e isso
-    // já está codificado em duas transações separadas na mesma conta.
+    // Transferência: cada conta vê só a sua perna, então o sinal vem do
+    // marcador de direção — 'in' credita o destino, 'out' debita a origem.
+    // Perna sem marcador (dado legado, criado antes do campo existir) cai no
+    // comportamento antigo de debitar, para não alterar saldos já exibidos.
+    if (t.transferDirection === 'in') return balance + t.amountCents
     return balance - t.amountCents
   }, account.openingBalanceCents)
 }

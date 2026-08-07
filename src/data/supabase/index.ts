@@ -52,7 +52,12 @@ export function createSupabaseProvider(): DataProvider {
     auth: new SupabaseAuth(client),
     ops: new SupabaseOperations(client),
 
-    profiles: createSupabaseRepository<Profile>(client, 'profiles', { scoped: false }),
+    // Lê da view que mascara o PII (CPF/telefone/nascimento) para quem não é
+    // gatekeeper; escreve na tabela-base (cada um edita o seu). Ver 0010.
+    profiles: createSupabaseRepository<Profile>(client, 'profiles', {
+      scoped: false,
+      readFrom: 'profiles_directory',
+    }),
     workspaces: createSupabaseRepository<Workspace>(client, 'workspaces', { scoped: false }),
     members: createSupabaseRepository<WorkspaceMember>(client, 'workspace_members'),
 

@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
 import { LoginPage } from '@/features/auth/LoginPage'
 import { PendingAccessPage } from '@/features/auth/PendingAccessPage'
+import { RecoveryPage } from '@/features/auth/RecoveryPage'
 import { AppShell } from './AppShell'
 import { permissionForPath } from './navigation'
 import { useSession } from './session'
@@ -129,6 +130,9 @@ export function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      {/* Destino do link de redefinição — público de propósito: precisa abrir
+          mesmo deslogado e é quem trata a sessão de recuperação. */}
+      <Route path="/redefinir-senha" element={<RecoveryPage />} />
 
       <Route
         element={

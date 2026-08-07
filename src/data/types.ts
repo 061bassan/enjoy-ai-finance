@@ -188,7 +188,13 @@ export type PaymentMethod =
 
 /**
  * Movimento efetivo de caixa — o "realizado". Sempre positivo em
- * `amountCents`; a direção vem de `kind`.
+ * `amountCents`; a direção vem de `kind` (income soma, expense subtrai).
+ *
+ * Transferência é o caso especial: as duas pernas têm o MESMO `kind`
+ * ('transfer') e o mesmo valor positivo, e cada conta só enxerga a sua perna.
+ * Logo `kind` não basta para saber se aquela perna soma ou subtrai — quem diz
+ * isso é `transferDirection`. Sem esse marcador, `accountBalance` subtraía as
+ * duas pernas e a conta de destino nunca era creditada.
  */
 export interface Transaction extends ScopedEntity {
   accountId: Id
@@ -205,6 +211,11 @@ export interface Transaction extends ScopedEntity {
   createdBy: Id
   /** Amarra as duas pernas de uma transferência entre contas. */
   transferGroupId?: Id | null
+  /**
+   * Só em transferência: `'out'` na conta de origem (subtrai), `'in'` na de
+   * destino (soma). Ausente em income/expense — a direção deles vem de `kind`.
+   */
+  transferDirection?: 'out' | 'in' | null
   /** Preenchido quando a transação nasceu da liquidação de um título. */
   billId?: Id | null
   /** Preenchido quando nasceu de uma regra recorrente. */

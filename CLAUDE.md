@@ -35,11 +35,11 @@ aprovação**, o **CRM de leads** e — agora — a **Fase 9 (Supabase) EXECUTAD
 
 | Verificação | Estado |
 |---|---|
-| `npm run test` | 182 testes passando (12 arquivos: domínio, provider local, validações) |
+| `npm run test` | 186 testes passando (12 arquivos: domínio, provider local, validações) |
 | `npm run typecheck` | limpo |
 | `npm run lint` | 0 erros, 6 avisos `react-refresh/only-export-components` (inofensivos) |
-| `npm run build` | ok, ~14 s |
-| Bundle inicial | ~190 kB gzip (`react` 51 + `data` 48 + `index` 91) |
+| `npm run build` | ok, ~7 s |
+| Bundle inicial | ~250 kB gzip (`react` 51 + `data` 48 + `index` 151) |
 
 ---
 
@@ -148,7 +148,8 @@ Por isso todo método é `async` mesmo quando a implementação local seria sín
 assinatura precisa ser idêntica nos dois providers.
 
 `src/data/index.ts` é o **único** ponto que decide onde os dados vivem, lendo
-`VITE_DATA_PROVIDER`. Hoje só `local` existe; `supabase` lança erro explicativo.
+`VITE_DATA_PROVIDER`. Os **dois** providers existem e são intercambiáveis: `local`
+(IndexedDB, padrão sem `.env`) e `supabase` (Postgres + RLS, com `VITE_DATA_PROVIDER=supabase`).
 
 **Regra de ouro:** trocar para Supabase **não deve tocar em `src/features/`**.
 Se tocar, a camada de contratos falhou — o bug está nela, não na tela.
@@ -158,8 +159,9 @@ Se tocar, a camada de contratos falhou — o bug está nela, não na tela.
 Funções sem I/O, sem React, sem data-de-hoje implícita (a data entra por parâmetro).
 É o núcleo testado do sistema, e é onde vale escrever mais.
 
-`money.ts` · `finance.ts` · `bills.ts` · `cashflow.ts` · `sales.ts` · `commercial.ts` ·
-`goals.ts` · `recurrence.ts` · `leads.ts` · `membership.ts`
+`finance.ts` · `bills.ts` · `cashflow.ts` · `sales.ts` · `commercial.ts` ·
+`goals.ts` · `recurrence.ts` · `leads.ts` · `membership.ts` (o `money.ts` mora em
+`src/lib/`, não aqui — é utilitário de centavos, não regra de negócio).
 
 `leads.ts` é onde mora a **taxa de conversão** (`conversionRate`): vendas reais ÷ leads.
 `commercial.ts` usa a mesma conta no **win rate** do funil (`commercialKpis`): vendas
@@ -197,7 +199,8 @@ período e personalização — que ficam em `src/app/` e `src/customization/` v
 ### `src/data/rules/permissions.ts` — matriz de papéis
 
 Fonte única de verdade. A UI usa `can()` para esconder botões e bloquear rotas, e as
-políticas RLS nas migrations (`0001` + `0006`/`0007` para os cargos) são o **espelho
+políticas RLS nas migrations (`0001` + `0006`/`0007` para os cargos + `0008` que fecha a
+leitura do financeiro para o `sales`) são o **espelho
 exato** desta tabela. Mudou uma linha aqui? A migration muda junto.
 
 > No modo local a matriz é a única barreira — e barreira de cliente **não é segurança**, é
@@ -233,7 +236,9 @@ Poder decrescente: `owner` › `ceo` = `socio` › `admin` › `finance` › `sa
 5. **Atraso nunca é gravado.** É função de `dueDate` vs. hoje. Sem job de meia-noite.
    `status` guarda `open | partial | paid | canceled` — jamais "atrasado".
 6. **Transferência entre contas não é receita nem despesa.** Duas transações amarradas
-   pelo mesmo `transferGroupId`.
+   pelo mesmo `transferGroupId`, com o mesmo valor positivo. O sinal vem de
+   `transferDirection` (`'out'` debita a origem, `'in'` credita o destino) — sem esse
+   marcador, `accountBalance` subtraía as duas pernas e o destino nunca era creditado.
 7. **Cartão de crédito fica fora do "cash em caixa"** — o saldo dele é dívida.
 8. **Burn rate só conta meses negativos.** Um mês lucrativo não "compensa" a queima
    anterior no cálculo de runway.
@@ -275,7 +280,7 @@ Poder decrescente: `owner` › `ceo` = `socio` › `admin` › `finance` › `sa
 
 | Rota | Arquivo | O que é |
 |---|---|---|
-| `/` | `features/dashboard/` | 20 KPIs, alertas automáticos, meta do mês |
+| `/` | `features/dashboard/` | 18 KPIs, alertas automáticos, meta do mês |
 | `/performance` | `features/performance/` | Séries temporais, receita por closer/SDR/canal, funil |
 | `/executivo` | `features/executive/` | ARR, churn, LTV, LTV/CAC, forecast, burn, runway |
 | `/vendas` | `features/sales/` | Vendas com comissões e economia unitária |
@@ -339,9 +344,15 @@ Cada provider implementa com a transação nativa (Dexie hoje, RPC no Postgres d
 
 ### Fase 9 — Supabase (FEITA)
 
-O provider `src/data/supabase/` está implementado contra os mesmos contratos, e as sete
-migrations foram aplicadas num projeto real. **Nenhum arquivo de `src/features/` mudou por
-causa da troca** — o critério de sucesso foi cumprido.
+O provider `src/data/supabase/` está implementado contra os mesmos contratos, e as
+migrations `0001`–`0007` foram aplicadas num projeto real. **Nenhum arquivo de
+`src/features/` mudou por causa da troca** — o critério de sucesso foi cumprido.
+
+> **As migrations `0008`–`0012` já foram aplicadas em produção** (RLS de `sales`, PII do
+> perfil, autorização de `move_lead_stage`, marcador de transferência e a escrita escopada
+> de venda pelo `sales`). Todas são idempotentes (`drop policy if exists`, `create or
+> replace`, `add column if not exists`) — rode `scripts/apply-migrations.mjs` num projeto
+> novo para replicá-las.
 
 As migrations (`supabase/migrations/`):
 
@@ -357,6 +368,26 @@ As migrations (`supabase/migrations/`):
   cadastro (o primeiro dono não consegue criar o próprio espaço pela UI por causa do RLS).
 - `0006_role_ceo.sql` / `0007_role_socio.sql` — cargos `ceo` e `socio`, `role_rank`, e as
   regras de gatekeeper (ver §4).
+- `0008_sales_read_scope.sql` — **correção de segurança**: fecha a leitura das tabelas
+  financeiras para o cargo `sales`. A 0001 abrira o SELECT delas a qualquer membro
+  (`is_member_of`), mas `sales` não tem `view:financials` na matriz — sem isso, um closer
+  lia caixa, folha e margens chamando o PostgREST direto, contornando a UI.
+- `0009_transfer_direction.sql` — coluna `transfer_direction` nas transações (o marcador
+  da invariante 6). Sem ela o saldo da conta de destino nunca era creditado.
+- `0010_profile_pii.sql` — **correção de LGPD**: view `profiles_directory` que mascara
+  CPF/telefone/nascimento para quem não é gatekeeper, e fecha o SELECT direto de `profiles`
+  ao próprio dono. O app lê nomes pela view; só quem libera acesso vê o PII.
+- `0011_move_lead_authz.sql` — **correção de autorização**: a RPC `move_lead_stage` era
+  `SECURITY DEFINER` sem checar quem chama (qualquer autenticado movia qualquer lead).
+  Ganhou guard espelhando a matriz (finance+ move qualquer lead; `sales` só o próprio;
+  `viewer` nenhum). Fecha também a leitura de `activity_log` para o `sales`.
+- `0012_sales_write_scope.sql` — **alinha o RLS à matriz para o `sales`**: as quatro
+  operações de venda (`op_create_sale`, `op_update_sale`, `op_delete_sale`,
+  `op_convert_lead`) viram `SECURITY DEFINER` com portão explícito (`may_write_sale`:
+  finance+ em qualquer venda; `sales` só na própria — closer/sdr da venda, ou dono do
+  lead). O closer passa a fechar a própria venda; antes o RLS financeiro barrava e o
+  fluxo falhava só no Supabase. Como `DEFINER` ignora o RLS, cada função confere que toda
+  linha recebida pertence ao mesmo workspace (o `WITH CHECK` que o RLS dava de graça).
 
 **Decisão-chave (a razão de as RPC serem finas):** a matemática (parcelamento em
 `buildReceivables`, status em `persistedStatus`, recorrência em `occurrencesBetween`) roda
@@ -452,5 +483,5 @@ git add .github && git commit -m "Adiciona CI" && git push
   se cadastrar de novo. Some junto com a fase 9.
 - **A validação de CPF confere os dígitos, não a existência.** Um CPF válido mas de
   outra pessoa passa. Quem confere isso é quem aprova, olhando a fila.
-- **Os 5 avisos de lint** são `react-refresh/only-export-components` em arquivos que
+- **Os 6 avisos de lint** são `react-refresh/only-export-components` em arquivos que
   exportam componente + hook/constante. Custo/benefício não justifica separar.
