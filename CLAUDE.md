@@ -348,11 +348,12 @@ O provider `src/data/supabase/` está implementado contra os mesmos contratos, e
 migrations `0001`–`0007` foram aplicadas num projeto real. **Nenhum arquivo de
 `src/features/` mudou por causa da troca** — o critério de sucesso foi cumprido.
 
-> **As migrations `0008`–`0012` já foram aplicadas em produção** (RLS de `sales`, PII do
-> perfil, autorização de `move_lead_stage`, marcador de transferência e a escrita escopada
-> de venda pelo `sales`). Todas são idempotentes (`drop policy if exists`, `create or
-> replace`, `add column if not exists`) — rode `scripts/apply-migrations.mjs` num projeto
-> novo para replicá-las.
+> **As migrations `0008`–`0013` já foram aplicadas em produção** (RLS de `sales`, PII do
+> perfil, autorização de `move_lead_stage`, marcador de transferência, a escrita escopada
+> de venda pelo `sales` e o fechamento das duas escaladas de privilégio da 0013). Todas são
+> idempotentes (`drop policy if exists`, `create or replace`, `drop trigger if exists`,
+> `add column if not exists`) — rode `scripts/apply-migrations.mjs` num projeto novo para
+> replicá-las.
 
 As migrations (`supabase/migrations/`):
 
@@ -388,6 +389,16 @@ As migrations (`supabase/migrations/`):
   lead). O closer passa a fechar a própria venda; antes o RLS financeiro barrava e o
   fluxo falhava só no Supabase. Como `DEFINER` ignora o RLS, cada função confere que toda
   linha recebida pertence ao mesmo workspace (o `WITH CHECK` que o RLS dava de graça).
+- `0013_close_authz_gaps.sql` — **fecha duas escaladas de privilégio** achadas na auditoria
+  de entrega. (1) `workspaces_update` usava `can_administer` (inclui `admin`) sem travar
+  `owner_id`: um admin trocava o dono e apagava a empresa pela política de delete. Trigger
+  `forbid_owner_takeover` só deixa o dono atual transferir a posse. (2) A 0012 conferia os
+  títulos/custos das RPC de venda só por `workspace_id`: um `sales` autorizado na própria
+  venda passava ids de qualquer conta a pagar/receber do espaço e os apagava (violando a
+  invariante 18). Triggers `guard_sales_sale_link` em `bills`/`sale_costs` restringem o
+  cargo `sales` a registros amarrados a uma venda dele (via `sale_belongs_to_caller`, que
+  espelha a base dupla do `may_write_sale`: closer/sdr da venda ou dono do lead). Cards
+  ficam de fora — `sales` tem `manage:kanban` na matriz.
 
 **Decisão-chave (a razão de as RPC serem finas):** a matemática (parcelamento em
 `buildReceivables`, status em `persistedStatus`, recorrência em `occurrencesBetween`) roda

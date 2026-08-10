@@ -313,9 +313,20 @@ export function AppShell() {
           <WorkspaceSwitcher />
         </div>
         <SidebarNav onNavigate={() => setMobileOpen(false)} />
-        <div className="border-t border-border px-4 py-3">
+        <div className="space-y-1 border-t border-border px-4 py-3">
           <p className="text-[10px] leading-relaxed text-muted-foreground/60">
             {data.kind === 'supabase' ? 'Dados salvos na nuvem' : 'Dados salvos neste navegador'}
+          </p>
+          <p className="text-[10px] leading-relaxed text-muted-foreground/60">
+            Desenvolvido por{' '}
+            <a
+              href="https://www.linkedin.com/in/rafael-lopes-bassan-b5a1a53a9/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-muted-foreground/80 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
+            >
+              @rbassan_
+            </a>
           </p>
         </div>
       </aside>

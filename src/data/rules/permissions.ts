@@ -68,7 +68,12 @@ const SALES: Permission[] = [
   'manage:leads:own',
   'manage:commercial',
   'manage:clients',
-  'manage:kanban',
+  // `manage:kanban` NÃO entra aqui: o único quadro é "Contas a pagar"
+  // (template `bills`, onde soltar em "Pago" liquida o título) — dado
+  // financeiro, e `sales` não tem `view:financials`. O RLS já barrava toda
+  // ESCRITA de card (write = `can_manage_finance`), então a permissão só
+  // servia para mostrar `/kanban` e vazar a LEITURA dos valores. A 0014 fecha
+  // essa leitura no servidor; tirar daqui alinha a matriz e some com a rota.
 ]
 
 const FINANCE: Permission[] = [
