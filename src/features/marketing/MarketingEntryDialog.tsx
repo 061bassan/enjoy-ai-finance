@@ -7,9 +7,10 @@ import {
   MARKETING_CHANNEL_LABEL,
   MARKETING_CHANNELS,
 } from '@/data/enums'
-import { formatMonthLong, today } from '@/lib/date'
+import { formatMonthLong, today, type IsoDate } from '@/lib/date'
 import { formatMoney, formatNumber } from '@/lib/money'
 import { useSession } from '@/app/session'
+import { MonthField } from '@/components/DateField'
 import { MoneyInput } from '@/components/MoneyInput'
 import { Button } from '@/components/ui/button'
 import {
@@ -32,12 +33,9 @@ import {
 import { Separator } from '@/components/ui/separator'
 import { useCreate, useUpdate } from '@/hooks/data'
 
-/** "YYYY-MM-01" ↔ "YYYY-MM" (o formato do `<input type="month">`). */
-function toMonthInput(month: string): string {
-  return month.slice(0, 7)
-}
-function toFirstDay(monthInput: string): string {
-  return `${monthInput}-01`
+/** Primeiro dia do mês de uma data — o formato em que o mês é guardado. */
+function firstDayOfMonth(iso: IsoDate): IsoDate {
+  return `${iso.slice(0, 7)}-01`
 }
 
 const EMPTY_INVESTMENT = {
@@ -76,7 +74,7 @@ export function MarketingEntryDialog({
   const update = useUpdate('marketingEntries', data.marketingEntries)
   const isEditing = entry != null
 
-  const [month, setMonth] = React.useState(() => toMonthInput(today()))
+  const [month, setMonth] = React.useState<IsoDate>(() => firstDayOfMonth(today()))
   const [channel, setChannel] = React.useState<MarketingChannel>('meta_ads')
   const [investment, setInvestment] = React.useState(EMPTY_INVESTMENT)
   const [volume, setVolume] = React.useState(EMPTY_VOLUME)
@@ -84,7 +82,7 @@ export function MarketingEntryDialog({
 
   React.useEffect(() => {
     if (!open) return
-    setMonth(toMonthInput(entry?.month ?? today()))
+    setMonth(firstDayOfMonth(entry?.month ?? today()))
     setChannel(entry?.channel ?? 'meta_ads')
     setInvestment({
       adsCents: entry?.adsCents ?? 0,
@@ -134,8 +132,7 @@ export function MarketingEntryDialog({
    * e ninguém descobriria olhando o cartão.
    */
   const duplicate = existing.find(
-    (row) =>
-      row.id !== entry?.id && row.month === toFirstDay(month) && row.channel === channel,
+    (row) => row.id !== entry?.id && row.month === month && row.channel === channel,
   )
 
   async function submit(event: React.FormEvent) {
@@ -150,7 +147,7 @@ export function MarketingEntryDialog({
     }
 
     const payload = {
-      month: toFirstDay(month),
+      month,
       channel,
       ...investment,
       ...volume,
@@ -193,17 +190,14 @@ export function MarketingEntryDialog({
             <div className="space-y-1.5">
               <Label htmlFor="marketing-month">Mês</Label>
               {/*
-                Campo de MÊS, não de data: a verba é um fato mensal, e um
-                seletor de dia convidaria a lançar "12/08" — que somaria com
-                "01/08" e viraria dois registros do mesmo mês.
+                `MonthField`, não `<input type="month">`: o seletor nativo mora
+                no shadow DOM e mantém azul, fonte e cantos do sistema em
+                qualquer tema — o mesmo motivo que fez o produto ter calendário
+                próprio. E é campo de MÊS, não de data: a verba é um fato
+                mensal, e um seletor de dia convidaria a lançar "12/08", que
+                viraria um segundo registro do mesmo mês.
               */}
-              <Input
-                id="marketing-month"
-                type="month"
-                value={month}
-                onChange={(event) => setMonth(event.target.value)}
-                required
-              />
+              <MonthField id="marketing-month" value={month} onChange={setMonth} />
             </div>
 
             <div className="space-y-1.5">
