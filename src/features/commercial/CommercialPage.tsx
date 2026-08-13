@@ -60,6 +60,7 @@ import {
   useSales,
   useUpdate,
 } from '@/hooks/data'
+import { useMarketingInvestment } from '@/hooks/marketing'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import {
   DropdownMenu,
@@ -76,6 +77,10 @@ export function CommercialPage() {
   const { data: days = [] } = useCommercialDays()
   const { data: sales = [] } = useSales()
   const { data: leads = [] } = useLeads()
+  // A verba de anúncios agora tem tela própria. Ela entra aqui somando ao
+  // investimento do diário: um CAC que enxergasse só metade do custo diria
+  // que adquirir cliente é mais barato do que é.
+  const marketingCents = useMarketingInvestment(range)
   const removeDay = useRemove('commercialDays', data.commercialDays)
 
   const [dialogOpen, setDialogOpen] = React.useState(false)
@@ -97,14 +102,18 @@ export function CommercialPage() {
       leadCount: periodLeads.length,
       // O win rate agora é vendas ÷ leads, então precisa do CRM: sem o
       // `leadCount` ele cairia no total digitado no diário sem necessidade.
-      kpis: commercialKpis(totals, periodSales, { leadCount: periodLeads.length }),
+      kpis: commercialKpis(totals, periodSales, {
+        leadCount: periodLeads.length,
+        extraInvestmentCents: marketingCents,
+      }),
       funnel: buildFunnel(totals, {
         leadCount: periodLeads.length,
         salesCount: activePeriodSales.length,
+        extraInvestmentCents: marketingCents,
       }),
       series: commercialSeries(period),
     }
-  }, [days, sales, leads, range])
+  }, [days, sales, leads, marketingCents, range])
 
   return (
     <>
@@ -167,11 +176,18 @@ export function CommercialPage() {
           }
           hint="Propostas aprovadas sobre o total de propostas decididas (aprovadas + recusadas). Mede a qualidade da proposta, não a do funil inteiro."
         />
+        {/* A composição fica à vista de propósito: o número agora vem de duas
+            telas, e um total mudo faria quem lê procurar o erro na errada. */}
         <KpiCard
           label="Investimento comercial"
-          value={formatMoney(metrics.totals.totalInvestmentCents)}
+          value={formatMoney(metrics.kpis.investmentCents)}
           invertVariation
-          secondary="anúncios + pessoas + ferramentas"
+          secondary={
+            marketingCents > 0
+              ? `${formatMoney(metrics.totals.totalInvestmentCents)} aqui + ${formatMoney(marketingCents)} em Marketing`
+              : 'anúncios + pessoas + ferramentas'
+          }
+          hint="Soma o investimento lançado no diário abaixo com o que a tela de Marketing registrou nos meses do período. É o divisor do CPL, do custo por reunião e do CAC."
         />
         <KpiCard
           label="CPL"
@@ -606,7 +622,16 @@ function CommercialDayDialog({
           <Separator />
 
           <div>
-            <p className="mb-3 text-sm font-medium">Investimento do dia</p>
+            <p className="mb-1 text-sm font-medium">Investimento do dia</p>
+            {/* O campo "Tráfego" continua aqui para quem já usa o diário, mas
+                verba de anúncio virou um fato mensal com tela própria. Lançar
+                nos dois lugares soma duas vezes — daí o aviso, e não a
+                remoção do campo (que apagaria o hábito de quem já lança). */}
+            <p className="mb-3 text-xs text-muted-foreground">
+              Anúncios agora têm lugar próprio em <strong>Marketing</strong>, por mês e por
+              canal. Se você já lançou a verba lá, deixe “Tráfego” em zero aqui — os dois
+              valores somam no CPL e no CAC.
+            </p>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {MONEY_FIELDS.map((field) => (
                 <div key={field.key} className="space-y-1.5">

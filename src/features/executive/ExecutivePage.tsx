@@ -46,6 +46,7 @@ import {
   useSales,
   useTransactions,
 } from '@/hooks/data'
+import { useMarketingInvestment } from '@/hooks/marketing'
 
 /**
  * Dashboard executivo.
@@ -69,6 +70,9 @@ export function ExecutivePage() {
   const { data: days = [] } = useCommercialDays()
   const { data: leads = [] } = useLeads()
   const { data: rules = [] } = useRecurringRules()
+  // Entra no CAC — e, por consequência, no LTV/CAC e no diagnóstico de saúde.
+  // Sem isto, a tela que decide corte de verba ignoraria a própria verba.
+  const marketingCents = useMarketingInvestment(range)
 
   const metrics = React.useMemo(() => {
     const current = inRange(transactions, range)
@@ -89,6 +93,7 @@ export function ExecutivePage() {
     // o cálculo cai no total digitado no diário comercial.
     const kpis = commercialKpis(commercial, periodSales, {
       leadCount: leadsInPeriod(leads, range).length,
+      extraInvestmentCents: marketingCents,
     })
 
     const mrr = activeMrr(sales, clients)
@@ -160,6 +165,7 @@ export function ExecutivePage() {
     days,
     leads,
     rules,
+    marketingCents,
     range,
     comparisonRange,
   ])

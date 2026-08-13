@@ -17,6 +17,7 @@ import type {
   Id,
   Lead,
   LeadActivity,
+  MarketingEntry,
   MonthlyTarget,
   Profile,
   PurchaseGoal,
@@ -108,6 +109,17 @@ export const useSales = (query?: ListQuery) => useCollection<Sale>('sales', data
 
 export const useCommercialDays = (query?: ListQuery) =>
   useCollection<CommercialDay>('commercialDays', data.commercialDays, query)
+
+/**
+ * Investimento de marketing.
+ *
+ * Sem filtro de período por padrão, e de propósito: a linha de agosto tem data
+ * "2026-08-01", e um período de 05/08 a 20/08 a descartaria — sumindo com a
+ * verba do próprio mês que se está olhando. O recorte é feito no domínio, por
+ * mês (`entriesInPeriod`).
+ */
+export const useMarketingEntries = () =>
+  useCollection<MarketingEntry>('marketingEntries', data.marketingEntries)
 
 /**
  * Leads.

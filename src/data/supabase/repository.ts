@@ -19,6 +19,9 @@ const DATE_COLUMN: Record<string, string | undefined> = {
   goal_contributions: 'date',
   monthly_targets: 'month',
   activity_log: 'created_at',
+  // Só ordena. O recorte por período é feito no domínio, por mês — ver a nota
+  // em `DATE_FIELD` no provider local.
+  marketing_entries: 'month',
 }
 
 /**

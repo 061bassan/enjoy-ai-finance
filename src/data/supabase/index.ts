@@ -15,6 +15,7 @@ import type {
   GoalContribution,
   Lead,
   LeadActivity,
+  MarketingEntry,
   MonthlyTarget,
   Profile,
   PurchaseGoal,
@@ -74,6 +75,7 @@ export function createSupabaseProvider(): DataProvider {
     sales: createSupabaseRepository<Sale>(client, 'sales'),
     saleCosts: createSupabaseRepository<SaleCost>(client, 'sale_costs'),
     commercialDays: createSupabaseRepository<CommercialDay>(client, 'commercial_days'),
+    marketingEntries: createSupabaseRepository<MarketingEntry>(client, 'marketing_entries'),
 
     monthlyTargets: createSupabaseRepository<MonthlyTarget>(client, 'monthly_targets'),
     goals: createSupabaseRepository<Goal>(client, 'goals'),

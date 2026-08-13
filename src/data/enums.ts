@@ -19,6 +19,7 @@ import type {
   LeadActivityKind,
   LeadSource,
   LeadStage,
+  MarketingChannel,
   MemberStatus,
   PaymentMethod,
   PurchaseStatus,
@@ -124,6 +125,35 @@ export const LEAD_SOURCE_LABEL: Record<LeadSource, string> = {
   evento: 'Evento',
   parceria: 'Parceria',
   outro: 'Outro',
+}
+
+export const MARKETING_CHANNEL_LABEL: Record<MarketingChannel, string> = {
+  geral: 'Geral',
+  meta_ads: 'Meta Ads',
+  google_ads: 'Google Ads',
+  tiktok_ads: 'TikTok Ads',
+  linkedin_ads: 'LinkedIn Ads',
+  youtube_ads: 'YouTube Ads',
+  influenciador: 'Influenciadores',
+  email: 'E-mail marketing',
+  organico: 'Orgânico',
+  outro: 'Outro',
+}
+
+export const MARKETING_CHANNELS = Object.keys(MARKETING_CHANNEL_LABEL) as MarketingChannel[]
+
+/** Explica o que cabe em cada canal — vira legenda no formulário. */
+export const MARKETING_CHANNEL_DESCRIPTION: Record<MarketingChannel, string> = {
+  geral: 'A verba do mês inteira, sem separar por plataforma.',
+  meta_ads: 'Facebook e Instagram.',
+  google_ads: 'Busca, display e performance max.',
+  tiktok_ads: 'Anúncios no TikTok.',
+  linkedin_ads: 'Anúncios no LinkedIn.',
+  youtube_ads: 'Anúncios em vídeo no YouTube.',
+  influenciador: 'Permutas e contratos com criadores.',
+  email: 'Disparos, automação e listas.',
+  organico: 'Conteúdo sem mídia paga — o custo aqui é de produção.',
+  outro: 'Qualquer canal fora da lista.',
 }
 
 export const SALE_STATUS_LABEL: Record<SaleStatus, string> = {

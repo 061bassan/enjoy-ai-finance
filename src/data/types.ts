@@ -553,6 +553,88 @@ export interface CommercialDay extends ScopedEntity {
 }
 
 // ---------------------------------------------------------------------------
+// Marketing — investimento mensal por canal
+// ---------------------------------------------------------------------------
+
+/**
+ * Canais de mídia.
+ *
+ * Conjunto fechado pelo mesmo motivo de `CostCenter`: é o que permite comparar
+ * "quanto o Meta custou por lead" entre meses sem depender de alguém digitar o
+ * nome do canal do mesmo jeito duas vezes.
+ *
+ * `geral` existe para quem não separa por plataforma — lança a verba total do
+ * mês numa linha só e todos os indicadores continuam funcionando. Sem ele, o
+ * conjunto fechado obrigaria a inventar um canal para poder registrar.
+ */
+export type MarketingChannel =
+  | 'geral'
+  | 'meta_ads'
+  | 'google_ads'
+  | 'tiktok_ads'
+  | 'linkedin_ads'
+  | 'youtube_ads'
+  | 'influenciador'
+  | 'email'
+  | 'organico'
+  | 'outro'
+
+/**
+ * Investimento de marketing de um mês, num canal.
+ *
+ * Existe porque verba de anúncio é um fato MENSAL, e o sistema só tinha dois
+ * lugares para ela: o custo por venda (`SaleCost.adsCents`) e o diário
+ * comercial (`CommercialDay.adsInvestmentCents`). O primeiro obriga a ratear a
+ * campanha do mês venda a venda — que é digitação repetida e chega errada; o
+ * segundo pede o número quebrado por dia, que a plataforma de anúncios nem
+ * sempre entrega. Nenhum dos dois é o formato em que a informação existe.
+ *
+ * Uma linha por (workspace, mês, canal). Guarda só o que **alguém precisa
+ * digitar**: quanto foi gasto e o que a mídia entregou. CPL, CAC, ROAS, ROI e
+ * lucro são calculados em `@/domain/marketing` — nenhum deles é coluna aqui,
+ * pela mesma razão de sempre (invariante 3): número derivado guardado é número
+ * que envelhece.
+ */
+export interface MarketingEntry extends ScopedEntity {
+  /** Primeiro dia do mês, "YYYY-MM-01" — igual a `MonthlyTarget.month`. */
+  month: IsoDate
+  channel: MarketingChannel
+
+  /**
+   * Verba que foi para a plataforma de anúncios. Separada das demais porque é
+   * a única base honesta do ROAS: agência e criativo não escalam com o
+   * resultado da campanha do jeito que a mídia escala.
+   */
+  adsCents: Cents
+  /** Agência, gestor de tráfego, social media. */
+  agencyCents: Cents
+  /** Criativos: produção, edição, filmagem, banco de imagens. */
+  creativeCents: Cents
+  /** Ferramentas de marketing: automação, landing page, e-mail. */
+  toolsCents: Cents
+  otherCents: Cents
+
+  /**
+   * O que a mídia entregou no mês. Zero significa "não informado" — os
+   * indicadores que dependem do número saem como "—" em vez de fingir
+   * precisão.
+   */
+  impressions: number
+  clicks: number
+  /**
+   * Leads gerados pelo canal, segundo a plataforma.
+   *
+   * NÃO se soma aos leads do CRM em lugar nenhum: é a mesma pessoa contada de
+   * outra fonte. Serve para o CPL de mídia e para revelar a diferença entre o
+   * que a plataforma reporta e o que virou lead cadastrado.
+   */
+  leads: number
+
+  notes?: string | null
+  createdBy: Id
+}
+
+// ---------------------------------------------------------------------------
 // Metas
 // ---------------------------------------------------------------------------
 

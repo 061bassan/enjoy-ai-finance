@@ -41,6 +41,7 @@ import {
   useSales,
   useTransactions,
 } from '@/hooks/data'
+import { useMarketingInvestment } from '@/hooks/marketing'
 
 /**
  * Dashboard de performance.
@@ -55,6 +56,9 @@ export function PerformancePage() {
   const { data: sales = [] } = useSales()
   const { data: categories = [] } = useCategories()
   const { data: days = [] } = useCommercialDays()
+  // O funil desta tela mostra custo por etapa: sem o marketing, cada etapa
+  // pareceria mais barata do que é.
+  const marketingCents = useMarketingInvestment(range)
   const profileMap = useProfileMap()
 
   const metrics = React.useMemo(() => {
@@ -93,9 +97,9 @@ export function PerformancePage() {
       byCloser: performanceBySeller(periodSales, 'closerId'),
       bySdr: performanceBySeller(periodSales, 'sdrId'),
       bySource: revenueBySource(periodSales),
-      funnel: buildFunnel(commercial),
+      funnel: buildFunnel(commercial, { extraInvestmentCents: marketingCents }),
     }
-  }, [transactions, sales, categories, days, range])
+  }, [transactions, sales, categories, days, marketingCents, range])
 
   return (
     <>

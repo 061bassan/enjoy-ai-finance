@@ -130,6 +130,13 @@ export interface CommercialKpis {
   roi: number | null
   revenueCents: Cents
   averageTicketCents: Cents | null
+
+  /**
+   * Investimento efetivamente usado nas divisões acima — o do diário MAIS o
+   * que veio de fora (marketing). Exposto porque um CPL sem o divisor à vista
+   * não se audita: quem lê precisa poder conferir de onde saiu o número.
+   */
+  investmentCents: Cents
 }
 
 export interface CommercialKpiOptions {
@@ -141,6 +148,22 @@ export interface CommercialKpiOptions {
    * comercial assume — pior, mas ainda auditável.
    */
   leadCount?: number
+
+  /**
+   * Investimento comercial registrado FORA do diário — hoje, o que a tela de
+   * Marketing lançou no período.
+   *
+   * Entra somando, e não substituindo, porque as duas telas medem coisas
+   * diferentes: o diário conhece SDR, closer e ferramentas; o marketing
+   * conhece a verba de mídia, a agência e os criativos. Um CAC que enxergasse
+   * só metade do custo diria que adquirir cliente é mais barato do que é — e
+   * essa é a conta que decide contratação e corte de verba.
+   *
+   * O risco do desenho é o mesmo custo lançado nos dois lugares; por isso a
+   * tela do diário avisa que anúncio tem lugar próprio, e o cartão de
+   * investimento mostra a composição em vez de um total mudo.
+   */
+  extraInvestmentCents?: Cents
 }
 
 /**
@@ -157,7 +180,7 @@ export function commercialKpis(
 ): CommercialKpis {
   const closed = activeSales(sales)
   const revenue = sumCents(closed.map((sale) => sale.amountCents))
-  const investment = totals.totalInvestmentCents
+  const investment = totals.totalInvestmentCents + (options.extraInvestmentCents ?? 0)
 
   const attended = totals.meetings - totals.noShows
 
@@ -168,7 +191,10 @@ export function commercialKpis(
     crmLeads > 0 ? 'crm' : totals.leads > 0 ? 'diario' : 'indisponivel'
 
   return {
-    cplCents: totals.leads ? Math.round(investment / totals.leads) : null,
+    // Mesmo denominador do win rate: o CRM quando existe, o diário quando não.
+    // Usar `totals.leads` aqui deixava o CPL vazio para quem cadastra lead no
+    // CRM e não preenche o diário — que é justamente quem tem o dado melhor.
+    cplCents: leadCount ? Math.round(investment / leadCount) : null,
     costPerCallCents: totals.calls ? Math.round(investment / totals.calls) : null,
     costPerMeetingCents: totals.meetings ? Math.round(investment / totals.meetings) : null,
     costPerProposalCents: totals.proposalsSent
@@ -201,6 +227,7 @@ export function commercialKpis(
     roi: investment ? (revenue - investment) / investment : null,
     revenueCents: revenue,
     averageTicketCents: closed.length ? Math.round(revenue / closed.length) : null,
+    investmentCents: investment,
   }
 }
 
@@ -238,11 +265,13 @@ export interface FunnelOptions {
    * sempre que essa pessoa esquecia.
    */
   salesCount?: number
+  /** Investimento de fora do diário (marketing). Ver `CommercialKpiOptions`. */
+  extraInvestmentCents?: Cents
 }
 
 /** Funil comercial, do lead à venda fechada. */
 export function buildFunnel(totals: CommercialTotals, options: FunnelOptions = {}): FunnelStage[] {
-  const investment = totals.totalInvestmentCents
+  const investment = totals.totalInvestmentCents + (options.extraInvestmentCents ?? 0)
   const hasCrmLeads = options.leadCount != null && options.leadCount > 0
 
   const stages: { key: string; label: string; count: number; measured?: boolean }[] = [

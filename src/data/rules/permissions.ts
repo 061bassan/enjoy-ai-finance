@@ -19,6 +19,7 @@ export type Permission =
   | 'view:sales:all'
   | 'view:sales:own'
   | 'view:commercial'
+  | 'view:marketing'
   | 'view:executive'
   | 'view:members'
   | 'view:leads:all'
@@ -34,6 +35,7 @@ export type Permission =
   | 'manage:sales:own'
   | 'manage:sale_costs'
   | 'manage:commercial'
+  | 'manage:marketing'
   | 'manage:clients'
   | 'manage:leads:all'
   | 'manage:leads:own'
@@ -48,10 +50,16 @@ export type Permission =
   | 'delete:workspace'
   | 'export:reports'
 
+/**
+ * `viewer` enxerga marketing porque enxerga o financeiro: a verba de anúncio
+ * já aparece para ele em Entradas e saídas. Quem NÃO enxerga é `sales` — a
+ * mesma razão que o mantém fora do dashboard executivo.
+ */
 const VIEWER: Permission[] = [
   'view:financials',
   'view:sales:all',
   'view:commercial',
+  'view:marketing',
   'view:leads:all',
 ]
 
@@ -88,6 +96,7 @@ const FINANCE: Permission[] = [
   'manage:sales:all',
   'manage:sale_costs',
   'manage:commercial',
+  'manage:marketing',
   'manage:clients',
   'manage:leads:all',
   'manage:goals',

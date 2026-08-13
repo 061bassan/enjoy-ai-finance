@@ -18,6 +18,7 @@ Cobre três domínios que normalmente vivem em planilhas separadas:
 
 - **Financeiro** — caixa, contas a pagar/receber, recorrências, transferências, metas.
 - **Comercial** — vendas com closer/SDR/origem, funil diário, CPL, CAC, win rate, comissões.
+- **Marketing** — verba mensal por canal, CPL, CAC de marketing, ROAS, ROI.
 - **Executivo** — ARR, churn, LTV, LTV/CAC, forecast, burn rate, runway, diagnóstico de saúde.
 
 O "AI" do nome é, hoje, **heurística determinística** — alertas do dashboard, diagnóstico
@@ -27,19 +28,19 @@ Ver §8 se a intenção for mudar isso.
 ### Estado atual
 
 Fases 1–8 concluídas, mais a personalização visual pelo sócio, o **cadastro com fila de
-aprovação**, o **CRM de leads** e — agora — a **Fase 9 (Supabase) EXECUTADA**. O provider
-`src/data/supabase/` está implementado contra os mesmos contratos, as migrations
-`0001`–`0007` foram aplicadas num projeto real, e o app roda na nuvem quando
+aprovação**, o **CRM de leads**, a **Fase 9 (Supabase) EXECUTADA** e — agora — o módulo de
+**Marketing** (§4). O provider `src/data/supabase/` está implementado contra os mesmos
+contratos, as migrations `0001`–`0015` foram aplicadas num projeto real, e o app roda na nuvem quando
 `VITE_DATA_PROVIDER=supabase` (ver §8). O provider local (IndexedDB) continua existindo e
 é o padrão sem `.env`. Produto completo e utilizável, **sem dados de exemplo**.
 
 | Verificação | Estado |
 |---|---|
-| `npm run test` | 186 testes passando (12 arquivos: domínio, provider local, validações) |
+| `npm run test` | 202 testes passando (13 arquivos: domínio, provider local, validações) |
 | `npm run typecheck` | limpo |
 | `npm run lint` | 0 erros, 6 avisos `react-refresh/only-export-components` (inofensivos) |
-| `npm run build` | ok, ~7 s |
-| Bundle inicial | ~250 kB gzip (`react` 51 + `data` 48 + `index` 151) |
+| `npm run build` | ok, ~18 s |
+| Bundle inicial | ~197 kB gzip (`react` 51 + `data` 48 + `index` 98) |
 
 ---
 
@@ -159,9 +160,16 @@ Se tocar, a camada de contratos falhou — o bug está nela, não na tela.
 Funções sem I/O, sem React, sem data-de-hoje implícita (a data entra por parâmetro).
 É o núcleo testado do sistema, e é onde vale escrever mais.
 
-`finance.ts` · `bills.ts` · `cashflow.ts` · `sales.ts` · `commercial.ts` ·
+`finance.ts` · `bills.ts` · `cashflow.ts` · `sales.ts` · `commercial.ts` · `marketing.ts` ·
 `goals.ts` · `recurrence.ts` · `leads.ts` · `membership.ts` (o `money.ts` mora em
 `src/lib/`, não aqui — é utilitário de centavos, não regra de negócio).
+
+`marketing.ts` guarda as contas do investimento mensal: CPL, CAC de marketing, ROAS, ROI e
+a conciliação com o caixa. Três regras moram ali e explicam o resto: **o mês é indivisível**
+(verba não se rateia por dia — período parcial traz o mês inteiro), **lead de plataforma e
+lead de CRM nunca se somam** (é a mesma pessoa contada de duas fontes; o CPL prefere a
+plataforma e cai para o CRM, dizendo de onde veio) e **ROAS usa só a mídia enquanto o ROI
+usa tudo** (agência e criativo não escalam com a campanha).
 
 `leads.ts` é onde mora a **taxa de conversão** (`conversionRate`): vendas reais ÷ leads.
 `commercial.ts` usa a mesma conta no **win rate** do funil (`commercialKpis`): vendas
@@ -218,8 +226,9 @@ Poder decrescente: `owner` › `ceo` = `socio` › `admin` › `finance` › `sa
   de entrada tem só três donos (owner/ceo/socio). É o que sustenta "Desenvolvedor libera
   o CEO/Sócio, e eles liberam o resto".
 - **`sales`** (closer/SDR) vê e edita **só o que é seu**, e não enxerga custo da empresa
-  nem o dashboard executivo. O filtro "apenas meus registros" mora nos **repositórios**,
-  não na matriz — a matriz guarda só a capacidade.
+  nem o dashboard executivo — nem a tela de Marketing, pela mesma razão (`view:marketing`
+  está em `VIEWER`, não em `SALES`). O filtro "apenas meus registros" mora nos
+  **repositórios**, não na matriz — a matriz guarda só a capacidade.
 
 ---
 
@@ -269,7 +278,17 @@ Poder decrescente: `owner` › `ceo` = `socio` › `admin` › `finance` › `sa
     lançamento e cliente com venda idem. O caminho é sempre desfazer o que veio depois
     (estornar a baixa) e só então mexer no que veio antes. Apagar por cima deixaria
     dinheiro no caixa sem origem, que é a única coisa que o sistema não pode permitir.
-19. **Esconder do menu não é proteger.** Toda rota com `requires` na navegação é barrada
+19. **Investimento de marketing não vira despesa no caixa.** A tela de Marketing recebe um
+    fato mensal (quanto foi para a mídia) e calcula sobre ele; a despesa continua sendo
+    lançada em Entradas e saídas, como sempre. Se o registro criasse a transação, quem já
+    lança a fatura da plataforma teria o mesmo custo contado duas vezes no lucro. O preço
+    da escolha é as duas pontas se afastarem — e é isso que o painel de conferência mede.
+20. **Custo comercial soma marketing + diário, nunca substitui.** As duas telas conhecem
+    metades diferentes (mídia/agência de um lado, SDR/closer/ferramentas do outro). Toda
+    tela que divide investimento por lead ou por venda usa `useMarketingInvestment` — se
+    uma esquecer, o CAC do relatório diverge do CAC da tela e ninguém confia em nenhum dos
+    dois.
+21. **Esconder do menu não é proteger.** Toda rota com `requires` na navegação é barrada
     por `RequirePermission` em `src/app/routes.tsx` — o menu e o roteador leem a mesma
     lista. E o painel financeiro sequer é montado para quem não tem `view:financials`:
     esse papel recebe `OwnDashboard`, com a própria carteira.
@@ -285,6 +304,7 @@ Poder decrescente: `owner` › `ceo` = `socio` › `admin` › `finance` › `sa
 | `/executivo` | `features/executive/` | ARR, churn, LTV, LTV/CAC, forecast, burn, runway |
 | `/vendas` | `features/sales/` | Vendas com comissões e economia unitária |
 | `/leads` | `features/leads/` | CRM: kanban por etapa (`LeadBoard`), acompanhamento, conversão |
+| `/marketing` | `features/marketing/` | Investimento mensal por canal, CPL, CAC de marketing, ROAS, conferência com o caixa |
 | `/comercial` | `features/commercial/` | Diário comercial, CPL, custo/reunião, CAC, win rate (vendas ÷ leads) |
 | `/clientes` | `features/clients/` | Carteira, receita por cliente, churn |
 | `/transacoes` | `features/transactions/` | CRUD com filtros |
@@ -348,12 +368,14 @@ O provider `src/data/supabase/` está implementado contra os mesmos contratos, e
 migrations `0001`–`0007` foram aplicadas num projeto real. **Nenhum arquivo de
 `src/features/` mudou por causa da troca** — o critério de sucesso foi cumprido.
 
-> **As migrations `0008`–`0013` já foram aplicadas em produção** (RLS de `sales`, PII do
+> **As migrations `0008`–`0015` já foram aplicadas em produção** (RLS de `sales`, PII do
 > perfil, autorização de `move_lead_stage`, marcador de transferência, a escrita escopada
-> de venda pelo `sales` e o fechamento das duas escaladas de privilégio da 0013). Todas são
+> de venda pelo `sales`, o fechamento das duas escaladas de privilégio da 0013, a leitura
+> do kanban na 0014 e a tabela de marketing na 0015). Da 0008 à 0014 são
 > idempotentes (`drop policy if exists`, `create or replace`, `drop trigger if exists`,
 > `add column if not exists`) — rode `scripts/apply-migrations.mjs` num projeto novo para
-> replicá-las.
+> replicá-las. A **0015 não é** (`create type`/`create table` puros): num projeto que já a
+> tem, rodá-la de novo falha em "already exists".
 
 As migrations (`supabase/migrations/`):
 
@@ -399,6 +421,13 @@ As migrations (`supabase/migrations/`):
   cargo `sales` a registros amarrados a uma venda dele (via `sale_belongs_to_caller`, que
   espelha a base dupla do `may_write_sale`: closer/sdr da venda ou dono do lead). Cards
   ficam de fora — `sales` tem `manage:kanban` na matriz.
+- `0015_marketing.sql` — tabela `marketing_entries` (uma linha por workspace+mês+canal),
+  enum `marketing_channel` e o RLS de `view:marketing`/`manage:marketing`: leitura para
+  todo membro ativo **menos** `sales`, escrita para quem opera o financeiro. A cláusula de
+  leitura é a MESMA da 0008/0014 (`is_member_of(...) and current_role_in(...) <> 'sales'`)
+  — verba de anúncio é custo da empresa, e o cargo que não vê caixa não vê custo.
+  **Já aplicada em produção.** No modo local não há o que fazer: o Dexie cria a tabela
+  sozinho na v4, na primeira abertura.
 
 **Decisão-chave (a razão de as RPC serem finas):** a matemática (parcelamento em
 `buildReceivables`, status em `persistedStatus`, recorrência em `occurrencesBetween`) roda
@@ -409,7 +438,10 @@ esse risco de divergência — passou a funcionar sem reescrever a regra em PL/p
 
 **Rodar as migrations num projeto novo:** `scripts/apply-migrations.mjs` aplica todas em
 ordem via Management API (`SB_REF=… SB_PAT=sbp_… node scripts/apply-migrations.mjs`) ou por
-conexão direta (`SB_DB_URL=…`). Ele separa os `ALTER TYPE … ADD VALUE` numa transação à
+conexão direta (`SB_DB_URL=…`). **Numa base que já recebeu migrations, passe só os arquivos
+novos como argumento** (`… node scripts/apply-migrations.mjs 0015_marketing.sql`): o script
+não é idempotente, e o primeiro `create type` repetido aborta tudo antes de chegar no que
+falta. Ele separa os `ALTER TYPE … ADD VALUE` numa transação à
 parte — o Postgres proíbe usar um valor de enum novo na mesma transação em que ele nasce
 (a CLI oficial esbarraria no mesmo ponto).
 

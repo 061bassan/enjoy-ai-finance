@@ -11,6 +11,12 @@
  *
  * Idempotência NÃO é garantida: rode uma vez numa base limpa. Se precisar
  * repetir, recrie o projeto ou limpe o schema `public` antes.
+ *
+ * Numa base que JÁ recebeu migrations, passe só os arquivos novos como
+ * argumento — senão o primeiro `create type` repetido derruba a execução
+ * inteira antes de chegar no que interessa:
+ *
+ *   SB_REF=<ref> SB_PAT=sbp_xxx node scripts/apply-migrations.mjs 0008_marketing.sql
  */
 import { readdir, readFile } from 'node:fs/promises'
 import { join, dirname } from 'node:path'

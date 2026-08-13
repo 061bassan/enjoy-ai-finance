@@ -15,6 +15,7 @@ import type {
   GoalContribution,
   Lead,
   LeadActivity,
+  MarketingEntry,
   MonthlyTarget,
   Profile,
   PurchaseGoal,
@@ -54,6 +55,7 @@ export class EnjoyDatabase extends Dexie {
   sales!: EntityTable<Sale, 'id'>
   saleCosts!: EntityTable<SaleCost, 'id'>
   commercialDays!: EntityTable<CommercialDay, 'id'>
+  marketingEntries!: EntityTable<MarketingEntry, 'id'>
 
   monthlyTargets!: EntityTable<MonthlyTarget, 'id'>
   goals!: EntityTable<Goal, 'id'>
@@ -128,6 +130,19 @@ export class EnjoyDatabase extends Dexie {
       members:
         'id, workspaceId, userId, [workspaceId+userId], role, status, [workspaceId+status]',
     })
+
+    /**
+     * v4 — investimento de marketing por mês e canal.
+     *
+     * O índice composto `[workspaceId+month+channel]` é o mesmo par que a
+     * migration marca como único no Postgres: a tela consulta "já existe
+     * lançamento deste canal neste mês?" antes de deixar criar outro, e sem
+     * índice isso varreria a tabela a cada abertura do formulário.
+     */
+    this.version(4).stores({
+      marketingEntries:
+        'id, workspaceId, month, channel, [workspaceId+month], [workspaceId+month+channel]',
+    })
   }
 }
 
@@ -150,6 +165,7 @@ export const TABLE_NAMES = [
   'sales',
   'saleCosts',
   'commercialDays',
+  'marketingEntries',
   'monthlyTargets',
   'goals',
   'goalContributions',
@@ -176,5 +192,12 @@ export const DATE_FIELD: Partial<Record<TableName, string>> = {
   leadActivities: 'date',
   goalContributions: 'date',
   monthlyTargets: 'month',
+  /**
+   * Só para ordenação. O recorte por período NÃO passa por aqui: o filtro
+   * genérico compara dia a dia, e um período de 05/08 a 20/08 descartaria a
+   * linha "2026-08-01" — justamente a verba daquele mês. Quem recorta é
+   * `entriesInPeriod` em `@/domain/marketing`, que compara meses.
+   */
+  marketingEntries: 'month',
   activity: 'createdAt',
 }

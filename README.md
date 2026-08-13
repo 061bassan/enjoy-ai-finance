@@ -13,6 +13,7 @@ Painel de operação que une três domínios que normalmente vivem em planilhas 
 
 - **Financeiro** — caixa, contas a pagar e receber, recorrências, transferências, metas.
 - **Comercial** — vendas com closer/SDR/origem, funil diário, CPL, CAC, win rate, comissões.
+- **Marketing** — verba mensal por canal, custo por lead, CAC de marketing, ROAS e ROI.
 - **Executivo** — ARR, churn, LTV, LTV/CAC, forecast, burn rate, runway, diagnóstico de saúde.
 
 A diferença em relação a um app de finanças com relatórios: **nada é derivado e salvo**.
@@ -38,7 +39,7 @@ primeiro pedido.
 | Comando | |
 |---|---|
 | `npm run dev` | servidor de desenvolvimento |
-| `npm run test` | 168 testes — domínio, provider local e validações |
+| `npm run test` | 202 testes — domínio, provider local e validações |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | eslint |
 | `npm run build` | typecheck + build de produção |
@@ -53,6 +54,7 @@ primeiro pedido.
 | `/executivo` | ARR, churn, LTV, LTV/CAC, forecast, burn, runway, diagnóstico |
 | `/vendas` | Vendas com comissões e economia unitária |
 | `/leads` | CRM — quadro por etapa, acompanhamento e conversão do lead em venda |
+| `/marketing` | Investimento do mês por canal, CPL, CAC de marketing, ROAS, conferência com o caixa |
 | `/comercial` | Diário comercial, funil, CPL, custo por reunião, CAC, win rate, ROI |
 | `/clientes` | Carteira, receita por cliente, churn |
 | `/transacoes` | Lançamentos com filtros |
@@ -70,7 +72,7 @@ primeiro pedido.
 Vite · React 18 · TypeScript strict · Tailwind · Radix UI · TanStack Query ·
 React Router (rotas em `lazy`) · Dexie/IndexedDB · Recharts · dnd-kit · Vitest
 
-Bundle inicial de ~189 kB gzip. As telas carregam sob demanda e as bibliotecas pesadas
+Bundle inicial de ~197 kB gzip. As telas carregam sob demanda e as bibliotecas pesadas
 ficam em arquivos próprios, então uma correção de texto não invalida o cache delas.
 
 ## Arquitetura em uma frase
@@ -96,7 +98,7 @@ recolhíveis, o **cadastro com fila de aprovação** e o **CRM de leads** — qu
 de conversão do funil passar a ser apurada em vez de digitada.
 
 Fase 9 — persistência no Supabase — **está executada**: o provider `src/data/supabase/`
-roda contra os mesmos contratos e as migrations `0001`–`0012` foram aplicadas num projeto
+roda contra os mesmos contratos e as migrations `0001`–`0015` foram aplicadas num projeto
 real (RLS espelhando a matriz de permissões). Com `VITE_DATA_PROVIDER=supabase` os dados
 são do servidor; sem `.env`, o app volta ao IndexedDB por dispositivo. Ver `CLAUDE.md` §8.
 

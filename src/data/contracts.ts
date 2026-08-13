@@ -27,6 +27,7 @@ import type {
   Lead,
   LeadActivity,
   LeadStage,
+  MarketingEntry,
   MonthlyTarget,
   Profile,
   PurchaseGoal,
@@ -333,6 +334,8 @@ export interface DataProvider {
   sales: Repository<Sale>
   saleCosts: Repository<SaleCost>
   commercialDays: Repository<CommercialDay>
+  /** Investimento de marketing, uma linha por mês e canal. */
+  marketingEntries: Repository<MarketingEntry>
 
   monthlyTargets: Repository<MonthlyTarget>
   goals: Repository<Goal>

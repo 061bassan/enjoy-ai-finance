@@ -53,6 +53,7 @@ import {
   useSaleCosts,
   useTransactions,
 } from '@/hooks/data'
+import { useMarketingInvestment } from '@/hooks/marketing'
 
 /**
  * Relatórios.
@@ -76,6 +77,9 @@ export function ReportsPage() {
   const { data: clients = [] } = useClients()
   const { data: days = [] } = useCommercialDays()
   const { data: leads = [] } = useLeads()
+  // Mesmo divisor da tela de Funil de vendas: o CAC do relatório não pode
+  // divergir do CAC que a pessoa acabou de ver na tela.
+  const marketingCents = useMarketingInvestment(range)
   const profileMap = useProfileMap()
 
   const categoryNames = React.useMemo(
@@ -115,10 +119,11 @@ export function ReportsPage() {
       commercial,
       commercialKpis: commercialKpis(commercial, periodSales, {
         leadCount: leadsInPeriod(leads, range).length,
+        extraInvestmentCents: marketingCents,
       }),
       billViews: toBillViews(periodBills, payments),
     }
-  }, [transactions, sales, bills, payments, days, leads, range])
+  }, [transactions, sales, bills, payments, days, leads, marketingCents, range])
 
   const periodLabel = `${formatDate(range.from)} a ${formatDate(range.to)}`
   const fileSuffix = `${range.from}_${range.to}`

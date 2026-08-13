@@ -167,6 +167,13 @@ sendo trabalho de hoje. O período recorta as métricas, não a carteira.
    CLAUDE.md §8.
 7. **Recuperação de senha** — no modo local não existe (sem servidor, sem e-mail). No
    Supabase, usar a recuperação por e-mail do próprio Auth.
+8. ~~**Onde lançar a verba de marketing**~~ — **feito.** A tela `/marketing` recebe o
+   investimento por mês e por canal, calcula CPL, CAC, ROAS, ROI e a sobra depois do
+   marketing, e soma esse investimento ao custo por etapa do funil (Funil de vendas,
+   Evolução, Visão dos sócios e Relatórios usam o mesmo `useMarketingInvestment`). O
+   registro **não** cria despesa no caixa — em vez disso há um painel de conferência com
+   as despesas de centro de custo Marketing. A migration `0015_marketing.sql` já foi
+   aplicada em produção.
 
 > Para continuar o trabalho, leia [`CLAUDE.md`](./CLAUDE.md) — traz a arquitetura, as
 > invariantes e o roteiro da Fase 9 em detalhe.

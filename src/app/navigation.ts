@@ -10,6 +10,7 @@ import {
   Handshake,
   LayoutDashboard,
   type LucideIcon,
+  Megaphone,
   PiggyBank,
   Repeat,
   Settings,
@@ -93,8 +94,18 @@ export const NAVIGATION: NavGroup[] = [
   {
     label: 'Comercial',
     items: [
-      // Leads vem antes de Vendas porque é a ordem em que as coisas
-      // acontecem: primeiro alguém chega, depois compra.
+      // A ordem é a das coisas acontecendo: primeiro se investe para alguém
+      // chegar, depois a pessoa chega, depois compra.
+      //
+      // `sales` (closer/SDR) não tem `view:marketing` — verba de anúncio é
+      // custo da empresa, e este papel não enxerga custo da empresa.
+      {
+        to: '/marketing',
+        label: 'Marketing',
+        icon: Megaphone,
+        requires: 'view:marketing',
+        teamOnly: true,
+      },
       { to: '/leads', label: 'Leads', icon: UserPlus, teamOnly: true },
       { to: '/vendas', label: 'Vendas', icon: Handshake, teamOnly: true },
       { to: '/comercial', label: 'Funil de vendas', icon: ClipboardList, teamOnly: true },

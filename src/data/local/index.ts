@@ -77,6 +77,7 @@ export function createLocalProvider(): DataProvider {
     sales: createRepository(db.sales, 'sales'),
     saleCosts: createRepository(db.saleCosts, 'saleCosts'),
     commercialDays: createRepository(db.commercialDays, 'commercialDays'),
+    marketingEntries: createRepository(db.marketingEntries, 'marketingEntries'),
 
     monthlyTargets: createRepository(db.monthlyTargets, 'monthlyTargets'),
     goals: createRepository(db.goals, 'goals'),

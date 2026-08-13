@@ -36,6 +36,49 @@ export interface CustomizableScreen {
 
 export const SCREENS: CustomizableScreen[] = [
   {
+    id: 'marketing',
+    label: 'Marketing',
+    sections: [
+      {
+        id: 'kpis',
+        label: 'Indicadores',
+        description: 'Cartões no topo da tela.',
+        items: [
+          {
+            id: 'investment',
+            label: 'Investimento',
+            locked: true,
+            hint: 'É o número que a tela existe para receber. Sem ele, nada abaixo se explica.',
+          },
+          { id: 'cpl', label: 'Custo por lead' },
+          { id: 'cac', label: 'CAC de marketing' },
+          { id: 'roas', label: 'ROAS' },
+          { id: 'profit', label: 'Sobra depois do marketing' },
+          { id: 'roi', label: 'ROI' },
+          { id: 'share', label: '% da receita' },
+          { id: 'leads', label: 'Leads gerados' },
+          { id: 'cpm', label: 'CPM', hiddenByDefault: true },
+          { id: 'cpc', label: 'CPC', hiddenByDefault: true },
+          { id: 'ctr', label: 'CTR', hiddenByDefault: true },
+          { id: 'clickToLead', label: 'Clique → lead', hiddenByDefault: true },
+        ],
+      },
+      {
+        id: 'panels',
+        label: 'Painéis',
+        items: [
+          { id: 'channels', label: 'Desempenho por canal' },
+          { id: 'evolution', label: 'Evolução mensal' },
+          {
+            id: 'reconciliation',
+            label: 'Conferência com o caixa',
+            hint: 'Esconder não faz a despesa aparecer no caixa — só tira o lembrete de que ela falta.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     id: 'leads',
     label: 'Leads',
     sections: [

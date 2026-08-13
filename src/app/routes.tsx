@@ -45,6 +45,9 @@ const ClientsPage = lazy(() =>
 const LeadsPage = lazy(() =>
   import('@/features/leads/LeadsPage').then((m) => ({ default: m.LeadsPage })),
 )
+const MarketingPage = lazy(() =>
+  import('@/features/marketing/MarketingPage').then((m) => ({ default: m.MarketingPage })),
+)
 const CommercialPage = lazy(() =>
   import('@/features/commercial/CommercialPage').then((m) => ({ default: m.CommercialPage })),
 )
@@ -164,6 +167,7 @@ export function AppRoutes() {
                   <Route path="vendas" element={<SalesPage />} />
                   <Route path="leads" element={<LeadsPage />} />
                   <Route path="clientes" element={<ClientsPage />} />
+                  <Route path="marketing" element={<MarketingPage />} />
                   <Route path="comercial" element={<CommercialPage />} />
                   <Route path="performance" element={<PerformancePage />} />
                   <Route path="executivo" element={<ExecutivePage />} />
