@@ -292,6 +292,13 @@ Poder decrescente: `owner` › `ceo` = `socio` › `admin` › `finance` › `sa
     por `RequirePermission` em `src/app/routes.tsx` — o menu e o roteador leem a mesma
     lista. E o painel financeiro sequer é montado para quem não tem `view:financials`:
     esse papel recebe `OwnDashboard`, com a própria carteira.
+22. **Título gerado sozinho nunca é título pago sozinho.** `useAutoGenerateRecurringBills`
+    (`src/hooks/recurring.ts`, montado uma vez em `AppShell`) mantém as regras de "Contas
+    fixas" com os próximos 3 meses de títulos sempre materializados, sem depender de
+    alguém clicar em "Gerar títulos" — é isso que faz o previsto aparecer sozinho em "A
+    pagar" e no Fluxo de caixa. A baixa continua manual: vencimento chegar não é prova de
+    pagamento, e um sistema que assumisse isso mentiria sobre o caixa exatamente na hora
+    em que a pessoa mais precisa confiar nele.
 
 ---
 
@@ -302,15 +309,15 @@ Poder decrescente: `owner` › `ceo` = `socio` › `admin` › `finance` › `sa
 | `/` | `features/dashboard/` | 18 KPIs, alertas automáticos, meta do mês |
 | `/performance` | `features/performance/` | Séries temporais, receita por closer/SDR/canal, funil |
 | `/executivo` | `features/executive/` | ARR, churn, LTV, LTV/CAC, forecast, burn, runway |
-| `/vendas` | `features/sales/` | Vendas com comissões e economia unitária |
-| `/leads` | `features/leads/` | CRM: kanban por etapa (`LeadBoard`), acompanhamento, conversão |
+| `/vendas` | `features/sales/` | Vendas com comissões, economia unitária e CAC (venda + Marketing) |
+| `/leads` | `features/leads/` | CRM: kanban por etapa (`LeadBoard`), acompanhamento, conversão, CPL |
 | `/marketing` | `features/marketing/` | Investimento mensal por canal, CPL, CAC de marketing, ROAS, conferência com o caixa |
 | `/comercial` | `features/commercial/` | Diário comercial, CPL, custo/reunião, CAC, win rate (vendas ÷ leads) |
 | `/clientes` | `features/clients/` | Carteira, receita por cliente, churn |
 | `/transacoes` | `features/transactions/` | CRUD com filtros |
 | `/fluxo-de-caixa` | `features/cashflow/` | Previsto vs. realizado, capital de giro, runway |
 | `/a-receber` `/a-pagar` | `features/bills/` | Mesma página, prop `direction` |
-| `/recorrentes` | `features/recurring/` | Custo de operação mensal |
+| `/recorrentes` | `features/recurring/` | Custo de operação mensal, títulos gerados sozinhos (ver invariante 22) |
 | `/metas` | `features/goals/` | Metas mensais + financeiras com projeção de data |
 | `/compras` | `features/purchases/` | Metas de compra com "quando cabe no caixa" |
 | `/kanban` | `features/kanban/` | Soltar em "Pago" liquida o título e lança no caixa |
