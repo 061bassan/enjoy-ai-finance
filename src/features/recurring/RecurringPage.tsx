@@ -275,7 +275,7 @@ export function RecurringPage() {
                             <Button
                               variant="ghost"
                               size="icon-sm"
-                              title="Gerar títulos dos próximos 3 meses"
+                              title="Gerar títulos dos próximos 3 meses agora (o sistema já mantém isso em dia sozinho a cada acesso — use aqui só para adiantar)"
                               onClick={() => void materialize(rule)}
                               disabled={generate.isPending}
                             >
@@ -430,7 +430,7 @@ function RuleDialog({
       notes: null,
     })
 
-    toast.success('Regra criada. Use o botão de calendário para gerar os títulos.')
+    toast.success('Regra criada. Os títulos são gerados automaticamente em instantes.')
     onOpenChange(false)
   }
 
