@@ -94,6 +94,11 @@ export const SCREENS: CustomizableScreen[] = [
             locked: true,
             hint: 'É a pergunta que a tela existe para responder: de tudo que chegou, quanto virou venda.',
           },
+          {
+            id: 'cpl',
+            label: 'Custo por lead',
+            hint: 'Investimento lançado em Marketing nos meses do período, dividido pelos leads cadastrados aqui.',
+          },
           { id: 'winRate', label: 'Taxa de ganho' },
           { id: 'pipeline', label: 'Em negociação' },
           { id: 'won', label: 'Ganhos no período' },

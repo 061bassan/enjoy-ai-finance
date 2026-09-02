@@ -17,6 +17,7 @@ import type { Lead, LeadStage } from '@/data/types'
 import { canManageLead } from '@/data/rules/permissions'
 import { usePeriod } from '@/app/period'
 import { useSession } from '@/app/session'
+import { useMarketingInvestment } from '@/hooks/marketing'
 import { useCustomization } from '@/customization/context'
 import { KpiCard, KpiGrid } from '@/components/KpiCard'
 import { EmptyState, PageHeader } from '@/components/PageHeader'
@@ -79,6 +80,10 @@ export function LeadsPage() {
   const { data: leads = [], isLoading } = useLeads()
   const { data: sales = [] } = useSales()
   const { data: commercialDays = [] } = useCommercialDays()
+  // O investimento lançado em Marketing entra aqui pelo mesmo motivo que
+  // entra no Funil de vendas: sem ele, o custo por lead desta tela mostraria
+  // só metade do que foi gasto para trazer quem está na lista abaixo.
+  const marketingCents = useMarketingInvestment(range)
   const profiles = useProfileMap()
   const moveStage = useMoveLeadStage()
 
@@ -124,9 +129,11 @@ export function LeadsPage() {
     const inPeriod = leadsInPeriod(visibleLeads, range)
     const diary = totalizeCommercial(daysInPeriod(commercialDays, range))
 
+    const totals = totalizeLeads(inPeriod)
+
     return {
       inPeriod,
-      totals: totalizeLeads(inPeriod),
+      totals,
       carteira: totalizeLeads(visibleLeads),
       conversion: conversionRate({
         leads: visibleLeads,
@@ -137,8 +144,12 @@ export function LeadsPage() {
       winRate: winRateFromLeads(inPeriod),
       attention: leadsNeedingAttention(visibleLeads, today()),
       bySource: leadsBySource(inPeriod),
+      // Mesma conta do CPL do Funil de vendas: investimento do período dividido
+      // pelos leads cadastrados aqui. Sem isso, "Custo por lead" não teria
+      // como ser conferido por quem lançou o investimento em Marketing.
+      cplCents: totals.total ? Math.round(marketingCents / totals.total) : null,
     }
-  }, [visibleLeads, sales, commercialDays, range])
+  }, [visibleLeads, sales, commercialDays, marketingCents, range])
 
   /** A carteira de quem está olhando — o quadro usa para travar o arrasto. */
   const canMoveLead = React.useCallback(
@@ -211,6 +222,19 @@ export function LeadsPage() {
             label="Leads no período"
             value={formatNumber(metrics.totals.total)}
             secondary={`${formatNumber(metrics.carteira.open)} em aberto na carteira`}
+          />
+        )}
+        {kpi('cpl') && (
+          <KpiCard
+            label="Custo por lead"
+            value={metrics.cplCents != null ? formatMoney(metrics.cplCents) : '—'}
+            invertVariation
+            secondary={
+              marketingCents > 0
+                ? `${formatMoney(marketingCents)} em Marketing ÷ ${formatNumber(metrics.totals.total)} leads`
+                : 'sem investimento lançado em Marketing no período'
+            }
+            hint="Investimento lançado em Marketing nos meses do período, dividido pelos leads cadastrados aqui. Cadastre o gasto na tela de Marketing para este número deixar de ficar em branco."
           />
         )}
         <KpiCard

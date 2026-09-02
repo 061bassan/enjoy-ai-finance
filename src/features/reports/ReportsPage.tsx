@@ -367,6 +367,17 @@ export function ReportsPage() {
                     : '—',
               },
               {
+                label: 'Investimento (comercial + marketing)',
+                value: formatMoney(report.commercialKpis.investmentCents),
+              },
+              {
+                label: 'Custo por lead (CPL)',
+                value:
+                  report.commercialKpis.cplCents != null
+                    ? formatMoney(report.commercialKpis.cplCents)
+                    : '—',
+              },
+              {
                 label: 'CAC',
                 value:
                   report.commercialKpis.cacCents != null

@@ -17,6 +17,7 @@ import { useCustomization } from '@/customization/context'
 import { variation } from '@/domain/finance'
 import { usePeriod } from '@/app/period'
 import { useSession } from '@/app/session'
+import { useMarketingInvestment } from '@/hooks/marketing'
 import { KpiCard, KpiGrid } from '@/components/KpiCard'
 import { EmptyState, PageHeader } from '@/components/PageHeader'
 import { ShowMore, useVisibleCount } from '@/components/ShowMore'
@@ -196,6 +197,11 @@ function buildColumns(profileMap: Map<string, Profile>): SaleColumn[] {
 export function SalesPage() {
   const { range, comparisonRange } = usePeriod()
   const { session, role, allow } = useSession()
+  // O CAC por venda (abaixo) só conhece o que foi lançado em cada venda. O
+  // investimento lançado na tela de Marketing entra aqui pelo mesmo motivo
+  // que entra no Funil de vendas e nos Relatórios: sem ele, o CAC mostrado
+  // aqui diria que adquirir cliente é mais barato do que de fato é.
+  const marketingCents = useMarketingInvestment(range)
 
   const canSeeAll = allow('manage:sales:all') || allow('view:sales:all')
   const canCreate = allow('manage:sales:all') || allow('manage:sales:own')
@@ -336,15 +342,21 @@ export function SalesPage() {
     const totalCost = rows.reduce((sum, row) => sum + row.costCents, 0)
     const totalAcquisition = rows.reduce((sum, row) => sum + row.cacCents, 0)
     const netProfit = rows.reduce((sum, row) => sum + row.netProfitCents, 0)
+    // Soma, nunca substitui — mesma regra do Funil de vendas: o que foi
+    // lançado em cada venda (anúncio atribuído, comissão, deslocamento) e o
+    // que foi lançado em Marketing (verba mensal por canal) medem custos
+    // diferentes e cobrem o mesmo CAC por ângulos distintos.
+    const totalAcquisitionWithMarketing = totalAcquisition + marketingCents
     return {
       rows,
       totalCost,
       netProfit,
       margin: summary.totalCents ? netProfit / summary.totalCents : null,
-      averageCac: rows.length ? Math.round(totalAcquisition / rows.length) : 0,
+      averageCac: rows.length ? Math.round(totalAcquisitionWithMarketing / rows.length) : 0,
+      saleAcquisitionCents: totalAcquisition,
       roi: totalCost ? netProfit / totalCost : null,
     }
-  }, [inPeriod, costsBySale, summary.totalCents])
+  }, [inPeriod, costsBySale, summary.totalCents, marketingCents])
 
   return (
     <>
@@ -416,7 +428,12 @@ export function SalesPage() {
             label="CAC médio"
             value={formatMoney(economics.averageCac)}
             invertVariation
-            hint="Anúncios + comissões + deslocamento, dividido pelo número de vendas do período."
+            secondary={
+              marketingCents > 0
+                ? `${formatMoney(economics.saleAcquisitionCents)} nas vendas + ${formatMoney(marketingCents)} em Marketing`
+                : undefined
+            }
+            hint="Anúncios + comissões + deslocamento lançados em cada venda, somados ao que a tela de Marketing registrou nos meses do período — tudo dividido pelo número de vendas."
           />,
         )}
         {kpi(
