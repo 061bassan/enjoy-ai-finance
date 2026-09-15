@@ -129,6 +129,44 @@ export interface MarketingKpiOptions {
   crmLeadCount?: number
 }
 
+export type LeadCountOrigin = 'plataforma' | 'crm' | 'indisponivel'
+
+/**
+ * De onde vem o denominador do CPL: a plataforma quando ela informou lead,
+ * o CRM quando não. Extraída de `marketingKpis` para que QUALQUER tela que
+ * precise do CPL de marketing — hoje Leads e Relatórios, além da própria
+ * tela de Marketing — use a mesma conta, em vez de reimplementar a
+ * preferência e arriscar esquecer o lead da plataforma. Ver decisão 2 no
+ * topo do arquivo.
+ */
+export function resolveLeadCount(
+  platformLeads: number,
+  crmLeadCount: number,
+): { leadCount: number; origin: LeadCountOrigin } {
+  if (platformLeads > 0) return { leadCount: platformLeads, origin: 'plataforma' }
+  if (crmLeadCount > 0) return { leadCount: crmLeadCount, origin: 'crm' }
+  return { leadCount: 0, origin: 'indisponivel' }
+}
+
+export interface MarketingLeadCpl {
+  cplCents: Cents | null
+  cplOrigin: LeadCountOrigin
+  leadCount: number
+}
+
+/** CPL de marketing e a origem do denominador — ver `resolveLeadCount`. */
+export function marketingLeadCpl(
+  totals: Pick<MarketingTotals, 'totalCents' | 'leads'>,
+  crmLeadCount: number,
+): MarketingLeadCpl {
+  const { leadCount, origin } = resolveLeadCount(totals.leads, crmLeadCount)
+  return {
+    cplCents: leadCount ? Math.round(totals.totalCents / leadCount) : null,
+    cplOrigin: origin,
+    leadCount,
+  }
+}
+
 export interface MarketingKpis {
   investmentCents: Cents
   /** Só a verba de plataforma — a base do ROAS. */
@@ -184,18 +222,15 @@ export function marketingKpis(
   const revenue = sumCents(closed.map((sale) => sale.amountCents))
   const investment = totals.totalCents
 
-  const crmLeads = options.crmLeadCount ?? 0
-  const leadCount = totals.leads > 0 ? totals.leads : crmLeads
-  const cplOrigin: MarketingKpis['cplOrigin'] =
-    totals.leads > 0 ? 'plataforma' : crmLeads > 0 ? 'crm' : 'indisponivel'
+  const cpl = marketingLeadCpl(totals, options.crmLeadCount ?? 0)
 
   return {
     investmentCents: investment,
     mediaInvestmentCents: totals.adsCents,
 
-    cplCents: leadCount ? Math.round(investment / leadCount) : null,
-    cplOrigin,
-    leadCount,
+    cplCents: cpl.cplCents,
+    cplOrigin: cpl.cplOrigin,
+    leadCount: cpl.leadCount,
 
     cpmCents: totals.impressions
       ? Math.round((totals.adsCents / totals.impressions) * 1000)

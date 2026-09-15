@@ -17,7 +17,7 @@ import type { Lead, LeadStage } from '@/data/types'
 import { canManageLead } from '@/data/rules/permissions'
 import { usePeriod } from '@/app/period'
 import { useSession } from '@/app/session'
-import { useMarketingInvestment } from '@/hooks/marketing'
+import { useMarketingInvestment, useMarketingLeadCpl } from '@/hooks/marketing'
 import { useCustomization } from '@/customization/context'
 import { KpiCard, KpiGrid } from '@/components/KpiCard'
 import { EmptyState, PageHeader } from '@/components/PageHeader'
@@ -125,14 +125,23 @@ export function LeadsPage() {
     })
   }, [leads, role, session?.user.id, search, ownerFilter])
 
+  const inPeriodLeads = React.useMemo(
+    () => leadsInPeriod(visibleLeads, range),
+    [visibleLeads, range],
+  )
+  // Prefere o número de leads que a plataforma informou ao lançar o
+  // investimento em Marketing, caindo para os leads cadastrados aqui só
+  // quando nenhuma plataforma informou — mesma preferência que a própria
+  // tela de Marketing usa, para o CPL não divergir de uma tela pra outra.
+  const marketingCpl = useMarketingLeadCpl(range, inPeriodLeads.length)
+
   const metrics = React.useMemo(() => {
-    const inPeriod = leadsInPeriod(visibleLeads, range)
     const diary = totalizeCommercial(daysInPeriod(commercialDays, range))
 
-    const totals = totalizeLeads(inPeriod)
+    const totals = totalizeLeads(inPeriodLeads)
 
     return {
-      inPeriod,
+      inPeriod: inPeriodLeads,
       totals,
       carteira: totalizeLeads(visibleLeads),
       conversion: conversionRate({
@@ -141,15 +150,11 @@ export function LeadsPage() {
         range,
         diaryLeadCount: diary.leads,
       }),
-      winRate: winRateFromLeads(inPeriod),
+      winRate: winRateFromLeads(inPeriodLeads),
       attention: leadsNeedingAttention(visibleLeads, today()),
-      bySource: leadsBySource(inPeriod),
-      // Mesma conta do CPL do Funil de vendas: investimento do período dividido
-      // pelos leads cadastrados aqui. Sem isso, "Custo por lead" não teria
-      // como ser conferido por quem lançou o investimento em Marketing.
-      cplCents: totals.total ? Math.round(marketingCents / totals.total) : null,
+      bySource: leadsBySource(inPeriodLeads),
     }
-  }, [visibleLeads, sales, commercialDays, marketingCents, range])
+  }, [visibleLeads, inPeriodLeads, sales, commercialDays, range])
 
   /** A carteira de quem está olhando — o quadro usa para travar o arrasto. */
   const canMoveLead = React.useCallback(
@@ -227,14 +232,22 @@ export function LeadsPage() {
         {kpi('cpl') && (
           <KpiCard
             label="Custo por lead"
-            value={metrics.cplCents != null ? formatMoney(metrics.cplCents) : '—'}
+            value={marketingCpl.cplCents != null ? formatMoney(marketingCpl.cplCents) : '—'}
             invertVariation
             secondary={
               marketingCents > 0
-                ? `${formatMoney(marketingCents)} em Marketing ÷ ${formatNumber(metrics.totals.total)} leads`
+                ? `${formatMoney(marketingCents)} em Marketing ÷ ${formatNumber(marketingCpl.leadCount)} leads ${
+                    marketingCpl.cplOrigin === 'plataforma' ? 'das plataformas' : 'do CRM'
+                  }`
                 : 'sem investimento lançado em Marketing no período'
             }
-            hint="Investimento lançado em Marketing nos meses do período, dividido pelos leads cadastrados aqui. Cadastre o gasto na tela de Marketing para este número deixar de ficar em branco."
+            hint={
+              marketingCpl.cplOrigin === 'plataforma'
+                ? 'Investimento lançado em Marketing nos meses do período, dividido pelos leads que as próprias plataformas informaram — o mesmo número que aparece na tela de Marketing.'
+                : marketingCpl.cplOrigin === 'crm'
+                  ? 'Nenhuma plataforma informou lead nos lançamentos de Marketing, então o denominador vem dos leads cadastrados aqui no período.'
+                  : 'Cadastre o investimento na tela de Marketing para este número deixar de ficar em branco.'
+            }
           />
         )}
         <KpiCard

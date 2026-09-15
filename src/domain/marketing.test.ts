@@ -3,9 +3,11 @@ import type { MarketingEntry, Sale, Transaction } from '@/data/types'
 import {
   entriesInPeriod,
   marketingKpis,
+  marketingLeadCpl,
   marketingSeries,
   performanceByChannel,
   reconcileMarketingWithCash,
+  resolveLeadCount,
   totalizeMarketing,
   wholeMonthsRange,
 } from './marketing'
@@ -184,6 +186,25 @@ describe('KPIs', () => {
     expect(kpis.roas).toBeNull()
     expect(kpis.roi).toBeNull()
     expect(kpis.cacCents).toBeNull()
+  })
+})
+
+describe('resolveLeadCount / marketingLeadCpl', () => {
+  it('prefere a plataforma quando ela informou lead', () => {
+    expect(resolveLeadCount(100, 40)).toEqual({ leadCount: 100, origin: 'plataforma' })
+  })
+
+  it('cai para o CRM quando a plataforma não informou', () => {
+    expect(resolveLeadCount(0, 40)).toEqual({ leadCount: 40, origin: 'crm' })
+  })
+
+  it('fica indisponível sem nenhuma das duas fontes', () => {
+    expect(resolveLeadCount(0, 0)).toEqual({ leadCount: 0, origin: 'indisponivel' })
+  })
+
+  it('marketingLeadCpl usa a mesma preferência para dividir o investimento', () => {
+    const cpl = marketingLeadCpl({ totalCents: 1_000_000, leads: 50 }, 200)
+    expect(cpl).toEqual({ cplCents: 20_000, cplOrigin: 'plataforma', leadCount: 50 })
   })
 })
 

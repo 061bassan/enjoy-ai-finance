@@ -53,7 +53,7 @@ import {
   useSaleCosts,
   useTransactions,
 } from '@/hooks/data'
-import { useMarketingInvestment } from '@/hooks/marketing'
+import { useMarketingInvestment, useMarketingLeadCpl } from '@/hooks/marketing'
 
 /**
  * Relatórios.
@@ -81,6 +81,15 @@ export function ReportsPage() {
   // divergir do CAC que a pessoa acabou de ver na tela.
   const marketingCents = useMarketingInvestment(range)
   const profileMap = useProfileMap()
+
+  const periodLeadCount = React.useMemo(
+    () => leadsInPeriod(leads, range).length,
+    [leads, range],
+  )
+  // Leads e CPL na visão de Marketing (prefere o número que a plataforma
+  // informou) — sem isso, o relatório mostrava investimento e nunca dizia
+  // quantos leads a verba trouxe segundo quem vendeu o anúncio.
+  const marketingCpl = useMarketingLeadCpl(range, periodLeadCount)
 
   const categoryNames = React.useMemo(
     () => new Map(categories.map((category) => [category.id, category.name])),
@@ -118,12 +127,12 @@ export function ReportsPage() {
       salesSummary: summarizeSales(periodSales),
       commercial,
       commercialKpis: commercialKpis(commercial, periodSales, {
-        leadCount: leadsInPeriod(leads, range).length,
+        leadCount: periodLeadCount,
         extraInvestmentCents: marketingCents,
       }),
       billViews: toBillViews(periodBills, payments),
     }
-  }, [transactions, sales, bills, payments, days, leads, marketingCents, range])
+  }, [transactions, sales, bills, payments, days, periodLeadCount, marketingCents, range])
 
   const periodLabel = `${formatDate(range.from)} a ${formatDate(range.to)}`
   const fileSuffix = `${range.from}_${range.to}`
@@ -383,6 +392,26 @@ export function ReportsPage() {
                   report.commercialKpis.cacCents != null
                     ? formatMoney(report.commercialKpis.cacCents)
                     : '—',
+              },
+              // As duas linhas abaixo vêm de Marketing, não do diário: mesmo
+              // número de leads que a própria tela de Marketing mostra (a
+              // plataforma quando ela informou, o CRM quando não). Ficam
+              // separadas do "Leads"/"CPL" acima porque medem coisas
+              // diferentes — aquele é o funil comercial inteiro (diário +
+              // marketing ÷ CRM), este é só o retorno do que foi investido em
+              // mídia. Ver invariante 20 do CLAUDE.md.
+              {
+                label: 'Leads informados em Marketing',
+                value:
+                  marketingCpl.leadCount > 0
+                    ? `${formatNumber(marketingCpl.leadCount)} (${
+                        marketingCpl.cplOrigin === 'plataforma' ? 'plataformas' : 'CRM'
+                      })`
+                    : '—',
+              },
+              {
+                label: 'CPL de Marketing',
+                value: marketingCpl.cplCents != null ? formatMoney(marketingCpl.cplCents) : '—',
               },
             ]}
           />
