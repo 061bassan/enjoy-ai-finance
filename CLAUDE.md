@@ -36,7 +36,7 @@ contratos, as migrations `0001`–`0015` foram aplicadas num projeto real, e o a
 
 | Verificação | Estado |
 |---|---|
-| `npm run test` | 202 testes passando (13 arquivos: domínio, provider local, validações) |
+| `npm run test` | 213 testes passando (13 arquivos: domínio, provider local, validações) |
 | `npm run typecheck` | limpo |
 | `npm run lint` | 0 erros, 6 avisos `react-refresh/only-export-components` (inofensivos) |
 | `npm run build` | ok, ~18 s |
@@ -292,13 +292,20 @@ Poder decrescente: `owner` › `ceo` = `socio` › `admin` › `finance` › `sa
     por `RequirePermission` em `src/app/routes.tsx` — o menu e o roteador leem a mesma
     lista. E o painel financeiro sequer é montado para quem não tem `view:financials`:
     esse papel recebe `OwnDashboard`, com a própria carteira.
-22. **Título gerado sozinho nunca é título pago sozinho.** `useAutoGenerateRecurringBills`
-    (`src/hooks/recurring.ts`, montado uma vez em `AppShell`) mantém as regras de "Contas
-    fixas" com os próximos 3 meses de títulos sempre materializados, sem depender de
-    alguém clicar em "Gerar títulos" — é isso que faz o previsto aparecer sozinho em "A
-    pagar" e no Fluxo de caixa. A baixa continua manual: vencimento chegar não é prova de
-    pagamento, e um sistema que assumisse isso mentiria sobre o caixa exatamente na hora
-    em que a pessoa mais precisa confiar nele.
+22. **Título gerado sozinho não é título pago sozinho — a menos que a regra peça isso.**
+    `useAutoGenerateRecurringBills` (`src/hooks/recurring.ts`, montado uma vez em
+    `AppShell`) mantém as regras de "Contas fixas" com os próximos 3 meses de títulos
+    sempre materializados, sem depender de alguém clicar em "Gerar títulos" — é isso que
+    faz o previsto aparecer sozinho em "A pagar" e no Fluxo de caixa. Por padrão a baixa
+    continua manual: vencimento chegar não é prova de pagamento, e um sistema que
+    assumisse isso mentiria sobre o caixa exatamente na hora em que a pessoa mais precisa
+    confiar nele. `RecurringRule.autoSettle` é a válvula de escape, opt-in e `false` por
+    padrão: quando ligada numa regra específica (custo que realmente sai sozinho da
+    conta — débito automático, assinatura no cartão), `useAutoSettleRecurringBills` baixa
+    o título vencido sozinho, pela MESMA `settleBill` do botão manual — mesmo rastro
+    (`BillPayment` + `Transaction`), mesma reversão via `unsettleBillPayment` se a baixa
+    automática errar. Gate por `manage:bills` (a permissão que já governa qualquer baixa),
+    não por `manage:recurring`.
 
 ---
 
@@ -317,7 +324,7 @@ Poder decrescente: `owner` › `ceo` = `socio` › `admin` › `finance` › `sa
 | `/transacoes` | `features/transactions/` | CRUD com filtros |
 | `/fluxo-de-caixa` | `features/cashflow/` | Previsto vs. realizado, capital de giro, runway |
 | `/a-receber` `/a-pagar` | `features/bills/` | Mesma página, prop `direction` |
-| `/recorrentes` | `features/recurring/` | Custo de operação mensal, títulos gerados sozinhos (ver invariante 22) |
+| `/recorrentes` | `features/recurring/` | Custo de operação mensal, títulos gerados sozinhos, baixa automática opcional por regra (ver invariante 22) |
 | `/metas` | `features/goals/` | Metas mensais + financeiras com projeção de data |
 | `/compras` | `features/purchases/` | Metas de compra com "quando cabe no caixa" |
 | `/kanban` | `features/kanban/` | Soltar em "Pago" liquida o título e lança no caixa |
@@ -383,6 +390,12 @@ migrations `0001`–`0007` foram aplicadas num projeto real. **Nenhum arquivo de
 > `add column if not exists`) — rode `scripts/apply-migrations.mjs` num projeto novo para
 > replicá-las. A **0015 não é** (`create type`/`create table` puros): num projeto que já a
 > tem, rodá-la de novo falha em "already exists".
+>
+> **A `0016` ainda NÃO foi aplicada em produção** — é `add column if not exists`
+> (idempotente), então basta `SB_REF=… SB_PAT=… node scripts/apply-migrations.mjs
+> 0016_recurring_auto_settle.sql` antes de qualquer regra usar o débito automático no
+> Supabase. No modo local não há o que fazer: o campo `autoSettle` é lido direto do Dexie,
+> sem índice, sem bump de versão.
 
 As migrations (`supabase/migrations/`):
 
@@ -435,6 +448,11 @@ As migrations (`supabase/migrations/`):
   — verba de anúncio é custo da empresa, e o cargo que não vê caixa não vê custo.
   **Já aplicada em produção.** No modo local não há o que fazer: o Dexie cria a tabela
   sozinho na v4, na primeira abertura.
+- `0016_recurring_auto_settle.sql` — coluna `auto_settle` em `recurring_rules` (default
+  `false`). Opt-in por regra: quando ligada, `useAutoSettleRecurringBills`
+  (`src/hooks/recurring.ts`) baixa sozinho, na data de vencimento, os títulos que a regra
+  gerou — ver invariante 22. **Ainda NÃO aplicada em produção** — precisa rodar antes de
+  alguém ligar o débito automático numa regra com o provider Supabase.
 
 **Decisão-chave (a razão de as RPC serem finas):** a matemática (parcelamento em
 `buildReceivables`, status em `persistedStatus`, recorrência em `occurrencesBetween`) roda

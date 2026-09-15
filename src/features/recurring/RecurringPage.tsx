@@ -238,8 +238,17 @@ export function RecurringPage() {
                   return (
                     <TableRow key={rule.id}>
                       <TableCell>
-                        <span className="block max-w-[200px] truncate font-medium">
+                        <span className="flex max-w-[200px] items-center gap-1.5 truncate font-medium">
                           {rule.name}
+                          {rule.autoSettle && (
+                            <Badge
+                              variant="outline"
+                              className="shrink-0"
+                              title="Baixa sozinha no vencimento e lança a saída em Entradas e saídas"
+                            >
+                              Débito automático
+                            </Badge>
+                          )}
                         </span>
                         <span className="block text-xs text-muted-foreground">
                           {rule.categoryId ? (categoryNames.get(rule.categoryId) ?? '—') : '—'}
@@ -373,6 +382,7 @@ function RuleDialog({
   const [categoryId, setCategoryId] = React.useState(NONE)
   const [costCenter, setCostCenter] = React.useState<CostCenter | ''>('')
   const [accountId, setAccountId] = React.useState(NONE)
+  const [autoSettle, setAutoSettle] = React.useState(false)
 
   React.useEffect(() => {
     if (!open) return
@@ -385,6 +395,7 @@ function RuleDialog({
     setCategoryId(rule?.categoryId ?? NONE)
     setCostCenter(rule?.costCenter ?? '')
     setAccountId(rule?.accountId ?? NONE)
+    setAutoSettle(rule?.autoSettle ?? false)
   }, [open, rule])
 
   async function submit(event: React.FormEvent) {
@@ -395,6 +406,10 @@ function RuleDialog({
     }
     if (amountCents <= 0) {
       toast.error('Informe um valor maior que zero.')
+      return
+    }
+    if (autoSettle && accountId === NONE) {
+      toast.error('Selecione a conta antes de ligar o débito automático — é dela que a baixa sai.')
       return
     }
 
@@ -408,6 +423,7 @@ function RuleDialog({
       frequency,
       dayOfMonth,
       startDate,
+      autoSettle,
     }
 
     if (rule) {
@@ -579,6 +595,20 @@ function RuleDialog({
               custo de operação.
             </div>
           )}
+
+          <div className="flex items-start justify-between gap-4 rounded-md border border-border p-3">
+            <div className="space-y-1">
+              <Label htmlFor="rule-auto-settle">Débito automático</Label>
+              <p className="text-xs text-muted-foreground">
+                Ligado, o título gerado por esta regra se baixa sozinho na data de vencimento: lança
+                a saída em Entradas e saídas e entra no realizado do Fluxo de caixa, sem clique. Use
+                só para custo que realmente sai sozinho da conta (assinatura no cartão, débito
+                automático). Se o pagamento pode atrasar ou falhar, deixe desligado e baixe na mão
+                quando confirmar no extrato.
+              </p>
+            </div>
+            <Switch id="rule-auto-settle" checked={autoSettle} onCheckedChange={setAutoSettle} />
+          </div>
 
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>

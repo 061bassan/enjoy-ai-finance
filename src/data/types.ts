@@ -307,6 +307,15 @@ export interface RecurringRule extends ScopedEntity {
   endDate?: IsoDate | null
   /** Gera o título automaticamente na virada do período. */
   autoGenerate: boolean
+  /**
+   * Baixa o título sozinho na data de vencimento — cria a saída em Entradas e
+   * saídas e liquida o título, sem esperar clique. Opt-in e `false` por
+   * padrão: vencimento chegar não é prova de pagamento (ver invariante 22),
+   * então só faz sentido para custo que realmente sai sozinho (débito
+   * automático, assinatura no cartão). Exige `accountId` — sem conta não há
+   * de onde debitar.
+   */
+  autoSettle: boolean
   active: boolean
   notes?: string | null
 }

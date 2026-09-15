@@ -7,7 +7,7 @@ import {
   type IsoDate,
 } from '@/lib/date'
 import type { Cents } from '@/lib/money'
-import type { Frequency, RecurringRule } from '@/data/types'
+import type { Bill, Frequency, RecurringRule } from '@/data/types'
 
 /**
  * Motor de recorrência — funções puras, sem I/O.
@@ -124,6 +124,35 @@ export function occurrencesBetween(
   }
 
   return dates
+}
+
+/**
+ * Títulos prontos para a baixa automática.
+ *
+ * Só entram títulos: (1) gerados por uma regra ATIVA com `autoSettle` ligado
+ * — desativar a regra também para a baixa sozinha, mesma fronteira que já
+ * vale para a geração de títulos; (2) ainda `open` — uma baixa parcial já é
+ * decisão de alguém, e a automação não pisa em cima; (3) vencidos (a data
+ * chegou, nunca antes — a automação não adianta pagamento); (4) com conta
+ * definida, porque `settleBill` exige de onde debitar.
+ */
+export function billsDueForAutoSettlement(
+  bills: readonly Bill[],
+  rules: readonly RecurringRule[],
+  asOf: IsoDate,
+): Bill[] {
+  const autoSettleRuleIds = new Set(
+    rules.filter((rule) => rule.active && rule.autoSettle).map((rule) => rule.id),
+  )
+
+  return bills.filter(
+    (bill) =>
+      bill.recurringRuleId != null &&
+      autoSettleRuleIds.has(bill.recurringRuleId) &&
+      bill.status === 'open' &&
+      bill.dueDate <= asOf &&
+      bill.accountId != null,
+  )
 }
 
 /** Próxima ocorrência a partir de uma data (inclusive). */

@@ -27,7 +27,7 @@ import { data } from '@/data'
 import { ROLE_LABEL } from '@/data/enums'
 import { pendingRequests } from '@/domain/membership'
 import { useMembers } from '@/hooks/data'
-import { useAutoGenerateRecurringBills } from '@/hooks/recurring'
+import { useAutoGenerateRecurringBills, useAutoSettleRecurringBills } from '@/hooks/recurring'
 import { useCustomization } from '@/customization/context'
 import { NAVIGATION } from './navigation'
 import { PeriodPicker } from './PeriodPicker'
@@ -299,6 +299,10 @@ export function AppShell() {
   // Mantém os títulos das contas fixas sempre gerados com meses de folga,
   // sem depender de alguém abrir "Contas fixas" e clicar em "Gerar títulos".
   useAutoGenerateRecurringBills()
+
+  // Baixa sozinha os títulos das regras com débito automático ligado — só
+  // isso, e só quando a pessoa optou por isso na regra (ver hook).
+  useAutoSettleRecurringBills()
 
   // Fecha a gaveta ao navegar no mobile.
   React.useEffect(() => {
