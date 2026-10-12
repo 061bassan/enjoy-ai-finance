@@ -79,6 +79,40 @@ import {
 
 const NONE = '__none__'
 
+/**
+ * Valor de uma conta parcelada: a parcela em destaque e, embaixo, o total do
+ * parcelamento e quanto ainda falta pagar. "Faltam" conta da próxima parcela
+ * em diante — as anteriores já venceram e são assunto de "A pagar".
+ */
+function InstallmentValue({
+  rule,
+  total,
+  nextNumber,
+}: {
+  rule: RecurringRule
+  total: number
+  nextNumber: number | null
+}) {
+  const totalCents = rule.totalAmountCents ?? rule.amountCents * total
+  const remaining = nextNumber != null ? total - nextNumber + 1 : 0
+  return (
+    <>
+      <span className="block">
+        {formatMoney(rule.amountCents)}
+        <span className="text-xs font-normal text-muted-foreground"> /parcela</span>
+      </span>
+      <span className="block text-xs text-muted-foreground">
+        {total}x · total {formatMoney(totalCents)}
+      </span>
+      <span className="block text-xs text-muted-foreground">
+        {remaining > 0
+          ? `faltam ${remaining}x · ${formatMoney(remaining * rule.amountCents)}`
+          : 'quitado'}
+      </span>
+    </>
+  )
+}
+
 /** Próxima ocorrência a partir de hoje, já com o número da parcela. */
 function nextScheduled(rule: RecurringRule) {
   const from = today()
@@ -298,9 +332,6 @@ export function RecurringPage() {
                         <span className="block text-xs text-muted-foreground">
                           {rule.categoryId ? (categoryNames.get(rule.categoryId) ?? '—') : '—'}
                           {rule.costCenter && ` · ${COST_CENTER_LABEL[rule.costCenter]}`}
-                          {rule.totalAmountCents
-                            ? ` · total ${formatMoney(rule.totalAmountCents)}`
-                            : null}
                         </span>
                       </TableCell>
 
@@ -312,12 +343,22 @@ export function RecurringPage() {
                         {next ? formatDate(next.date) : '—'}
                         {next?.installmentNumber != null && (
                           <span className="block text-xs">
-                            parcela {next.installmentNumber}/{next.installmentTotal}
+                            próxima parcela: {next.installmentNumber}/{next.installmentTotal}
                           </span>
                         )}
                       </TableCell>
 
-                      <TableCell data-numeric>{formatMoney(rule.amountCents)}</TableCell>
+                      <TableCell data-numeric>
+                        {plan ? (
+                          <InstallmentValue
+                            rule={rule}
+                            total={plan.total}
+                            nextNumber={next?.installmentNumber ?? null}
+                          />
+                        ) : (
+                          formatMoney(rule.amountCents)
+                        )}
+                      </TableCell>
 
                       <TableCell data-numeric className="hidden font-medium sm:table-cell">
                         {formatMoney(monthlyEquivalent(rule))}
