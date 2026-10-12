@@ -7,9 +7,6 @@ import { formatMoney, formatNumber, formatPercent } from '@/lib/money'
 import { GOAL_TYPE_LABEL, optionsFrom } from '@/data/enums'
 import type { Goal, GoalType, MonthlyTarget } from '@/data/types'
 import { goalProgress, monthlyTargetProgress, requiredMonthlyContribution } from '@/domain/goals'
-import { grossRevenue, inRange, netMargin, netProfit } from '@/domain/finance'
-import { summarizeSales } from '@/domain/sales'
-import { daysInPeriod, totalizeCommercial } from '@/domain/commercial'
 import { useSession } from '@/app/session'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { DateField, MonthField } from '@/components/DateField'
@@ -45,17 +42,15 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   useAccounts,
-  useClients,
-  useCommercialDays,
   useCreate,
   useGoalContributions,
   useGoals,
   useMonthlyTargets,
   useRemove,
-  useSales,
-  useTransactions,
   useUpdate,
 } from '@/hooks/data'
+import { useMonthActuals } from './monthActuals'
+import { GoalsDashboard } from './GoalsDashboard'
 
 export function GoalsPage() {
   const { workspace } = useSession()
@@ -69,11 +64,15 @@ export function GoalsPage() {
       />
 
       {isTeam ? (
-        <Tabs defaultValue="monthly">
+        <Tabs defaultValue="dashboard">
           <TabsList>
+            <TabsTrigger value="dashboard">Painel</TabsTrigger>
             <TabsTrigger value="monthly">Metas do mês</TabsTrigger>
             <TabsTrigger value="financial">Metas financeiras</TabsTrigger>
           </TabsList>
+          <TabsContent value="dashboard">
+            <GoalsDashboard />
+          </TabsContent>
           <TabsContent value="monthly">
             <MonthlyTargetsTab />
           </TabsContent>
@@ -101,10 +100,7 @@ function MonthlyTargetsTab() {
   const canManage = allow('manage:targets')
 
   const { data: targets = [] } = useMonthlyTargets()
-  const { data: transactions = [] } = useTransactions()
-  const { data: sales = [] } = useSales()
-  const { data: days = [] } = useCommercialDays()
-  const { data: clients = [] } = useClients()
+  const actualsFor = useMonthActuals()
 
   const currentMonth = `${today().slice(0, 7)}-01`
   const [selectedMonth, setSelectedMonth] = React.useState(currentMonth)
@@ -116,34 +112,8 @@ function MonthlyTargetsTab() {
 
   const progress = React.useMemo(() => {
     if (!target) return null
-
-    const range = rangeOfMonth(selectedMonth)
-    const monthTransactions = inRange(transactions, range)
-    const monthSales = sales.filter(
-      (sale) => sale.saleDate >= range.from && sale.saleDate <= range.to,
-    )
-    const summary = summarizeSales(monthSales)
-    const commercial = totalizeCommercial(daysInPeriod(days, range))
-
-    const newClients = clients.filter(
-      (client) =>
-        client.startDate && client.startDate >= range.from && client.startDate <= range.to,
-    ).length
-
-    const margin = netMargin(monthTransactions)
-
-    return monthlyTargetProgress(target, {
-      revenueCents: grossRevenue(monthTransactions),
-      profitCents: netProfit(monthTransactions),
-      salesCount: summary.count,
-      meetingsCount: commercial.meetings,
-      proposalsCount: commercial.proposalsSent,
-      newClientsCount: newClients,
-      mrrCents: summary.mrrCents,
-      setupCents: summary.setupRevenueCents,
-      marginPercent: margin != null ? margin * 100 : 0,
-    })
-  }, [target, selectedMonth, transactions, sales, days, clients])
+    return monthlyTargetProgress(target, actualsFor(rangeOfMonth(selectedMonth)))
+  }, [target, selectedMonth, actualsFor])
 
   const months = React.useMemo(
     () => [...targets].sort((a, b) => b.month.localeCompare(a.month)),

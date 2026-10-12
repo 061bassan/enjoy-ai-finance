@@ -246,3 +246,94 @@ export function monthlyTargetProgress(
   // Metas não definidas (alvo zero) não viram barra — poluiriam a tela.
   return rows.filter((row) => row.targetValue > 0)
 }
+
+// ---------------------------------------------------------------------------
+// Painel de metas — ritmo, projeção e curva acumulada do mês
+// ---------------------------------------------------------------------------
+
+export type PaceStatus = 'reached' | 'on_track' | 'behind' | 'missed'
+
+export interface GoalPace {
+  /** Realizado ÷ meta (pode passar de 1). */
+  ratio: number
+  /** Onde o realizado "deveria" estar hoje, se o mês fosse linear (0–1). */
+  expectedRatio: number
+  /** Valor no fim do mês mantendo o ritmo atual. `null` sem dia decorrido. */
+  projectedValue: number | null
+  /** Quanto precisa entrar por dia, nos dias que restam, para bater a meta. */
+  requiredPerDay: number | null
+  remainingValue: number
+  daysLeft: number
+  status: PaceStatus
+}
+
+/**
+ * Situação de uma meta do mês contra o calendário.
+ *
+ * "No ritmo" compara com a reta ideal (meta × dias decorridos ÷ dias do mês),
+ * com 5% de folga: no dia 3 ninguém está exatamente em 10%, e um painel que
+ * pinta de vermelho por R$ 50 de diferença ensina a ignorar o vermelho.
+ *
+ * Métrica que não acumula (margem) não tem ritmo — só bateu ou não.
+ */
+export function goalPace(input: {
+  current: number
+  target: number
+  elapsedDays: number
+  totalDays: number
+  cumulative?: boolean
+}): GoalPace {
+  const { current, target, totalDays } = input
+  const cumulative = input.cumulative ?? true
+  const elapsed = Math.min(Math.max(0, input.elapsedDays), totalDays)
+  const ratio = target > 0 ? current / target : 0
+  const expectedRatio = cumulative && totalDays > 0 ? elapsed / totalDays : 1
+  const daysLeft = totalDays - elapsed
+  const remainingValue = Math.max(0, target - current)
+
+  const projectedValue =
+    cumulative && elapsed > 0 ? Math.round((current / elapsed) * totalDays) : null
+  const requiredPerDay =
+    cumulative && remainingValue > 0 && daysLeft > 0 ? remainingValue / daysLeft : null
+
+  let status: PaceStatus
+  if (ratio >= 1) status = 'reached'
+  else if (daysLeft === 0) status = 'missed'
+  else if (!cumulative) status = 'behind'
+  else status = ratio >= expectedRatio * 0.95 ? 'on_track' : 'behind'
+
+  return { ratio, expectedRatio, projectedValue, requiredPerDay, remainingValue, daysLeft, status }
+}
+
+export interface CumulativePoint {
+  date: IsoDate
+  /** Dia do mês (1–31), o rótulo do eixo. */
+  day: number
+  /** Realizado acumulado até o dia. `null` nos dias que ainda não chegaram. */
+  realized: number | null
+  /** Reta ideal até a meta. */
+  ideal: number
+}
+
+/**
+ * Curva do mês: realizado acumulado dia a dia contra a reta ideal.
+ *
+ * `valueUntil(dia)` devolve o realizado do primeiro dia do mês até `dia` — o
+ * painel passa a MESMA conta da lista de metas, então o ponto final da curva
+ * é sempre igual ao número que aparece no cartão.
+ */
+export function cumulativeSeries(
+  days: readonly IsoDate[],
+  target: number,
+  asOf: IsoDate,
+  valueUntil: (day: IsoDate) => number,
+): CumulativePoint[] {
+  const total = days.length
+  return days.map((date, index) => ({
+    date,
+    day: Number(date.slice(8, 10)),
+    realized: date <= asOf ? valueUntil(date) : null,
+    // Sem arredondar: em metas pequenas (6 vendas) a reta viraria escada.
+    ideal: total ? (target * (index + 1)) / total : 0,
+  }))
+}
