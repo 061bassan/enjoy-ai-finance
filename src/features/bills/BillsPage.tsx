@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { toast } from 'sonner'
 import {
+  Ban,
   CheckCircle2,
   Inbox,
   MoreHorizontal,
@@ -9,6 +10,7 @@ import {
   RotateCcw,
   Search,
   Trash2,
+  Undo2,
 } from 'lucide-react'
 import { data } from '@/data'
 import { formatDate } from '@/lib/date'
@@ -62,6 +64,7 @@ import {
   useClients,
   useRemove,
   useUnsettleBillPayment,
+  useUpdate,
 } from '@/hooks/data'
 import { BillDialog } from './BillDialog'
 import { SettleBillDialog } from './SettleBillDialog'
@@ -89,6 +92,7 @@ export function BillsPage({ direction }: { direction: BillDirection }) {
   const { data: categories = [] } = useCategories()
   const { data: clients = [] } = useClients()
   const removeBill = useRemove('bills', data.bills)
+  const updateBill = useUpdate('bills', data.bills)
   const unsettle = useUnsettleBillPayment()
 
   const [search, setSearch] = React.useState('')
@@ -99,6 +103,7 @@ export function BillsPage({ direction }: { direction: BillDirection }) {
   const [editing, setEditing] = React.useState<BillView | null>(null)
   const [deleting, setDeleting] = React.useState<BillView | null>(null)
   const [reversing, setReversing] = React.useState<BillView | null>(null)
+  const [canceling, setCanceling] = React.useState<BillView | null>(null)
 
   const isReceivable = direction === 'receivable'
 
@@ -182,6 +187,26 @@ export function BillsPage({ direction }: { direction: BillDirection }) {
    * de desfazer: apagar a transação sozinha deixaria o título quitado sem
    * dinheiro nenhum atrás dele.
    */
+  /**
+   * Cancelar é diferente de excluir: o título fica no banco com status
+   * `canceled`, sai do previsto e NÃO gera saída no caixa. É o caminho para a
+   * conta que já foi paga e lançada em Entradas e saídas por fora — dar baixa
+   * contaria a despesa duas vezes, e excluir não adianta num título de conta
+   * fixa: o gerador recriaria a mesma data na próxima abertura.
+   */
+  async function setCanceled(view: BillView, canceled: boolean) {
+    try {
+      await updateBill.mutateAsync({
+        id: view.bill.id,
+        patch: { status: canceled ? 'canceled' : 'open' },
+      })
+      toast.success(canceled ? 'Título cancelado.' : 'Título reaberto.')
+      setCanceling(null)
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : 'Não foi possível alterar o título.')
+    }
+  }
+
   async function confirmReverse() {
     if (!reversing) return
     const list = paymentsByBill.get(reversing.bill.id) ?? []
@@ -329,6 +354,12 @@ export function BillsPage({ direction }: { direction: BillDirection }) {
 
                   <TableCell className="max-w-[180px] truncate font-medium">
                     {view.bill.partyName}
+                    {/* Parcela no nome, não na descrição: a coluna de descrição some no celular. */}
+                    {view.bill.installmentNumber != null && view.bill.installmentTotal != null && (
+                      <Badge variant="outline" className="ml-1.5 tabular-nums">
+                        {view.bill.installmentNumber}/{view.bill.installmentTotal}
+                      </Badge>
+                    )}
                   </TableCell>
 
                   <TableCell className="hidden max-w-[240px] truncate text-muted-foreground md:table-cell">
@@ -386,6 +417,16 @@ export function BillsPage({ direction }: { direction: BillDirection }) {
                             {view.paidCents > 0 && (
                               <DropdownMenuItem onSelect={() => setReversing(view)}>
                                 <RotateCcw /> Estornar última baixa
+                              </DropdownMenuItem>
+                            )}
+                            {view.paidCents === 0 && view.status !== 'canceled' && (
+                              <DropdownMenuItem onSelect={() => setCanceling(view)}>
+                                <Ban /> Cancelar título
+                              </DropdownMenuItem>
+                            )}
+                            {view.status === 'canceled' && (
+                              <DropdownMenuItem onSelect={() => void setCanceled(view, false)}>
+                                <Undo2 /> Reabrir título
                               </DropdownMenuItem>
                             )}
                             <DropdownMenuItem onSelect={() => setDeleting(view)}>
@@ -463,6 +504,19 @@ export function BillsPage({ direction }: { direction: BillDirection }) {
         confirmLabel="Estornar"
         destructive
         onConfirm={confirmReverse}
+      />
+
+      <ConfirmDialog
+        open={canceling != null}
+        onOpenChange={(open) => {
+          if (!open) setCanceling(null)
+        }}
+        title="Cancelar este título?"
+        description="Ele sai do previsto e não lança nada em Entradas e saídas — use quando a conta já foi paga e lançada por fora, ou não vale mais. O título continua no histórico e pode ser reaberto."
+        confirmLabel="Cancelar título"
+        onConfirm={async () => {
+          if (canceling) await setCanceled(canceling, true)
+        }}
       />
     </>
   )

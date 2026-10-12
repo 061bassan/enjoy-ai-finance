@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { nowIso, toIsoDate, type IsoDate } from '@/lib/date'
 import { sumCents } from '@/lib/money'
 import { persistedStatus } from '@/domain/bills'
-import { occurrencesBetween } from '@/domain/recurrence'
+import { scheduledOccurrences } from '@/domain/recurrence'
 import { buildReceivables } from '../receivables'
 import type { NewEntity, Operations } from '../contracts'
 import type {
@@ -315,18 +315,18 @@ export class SupabaseOperations implements Operations {
     await this.rpc('op_delete_transactions', { p_ids: ids })
   }
 
-  async generateBillsFromRule(ruleId: Id, throughDate: IsoDate): Promise<Bill[]> {
+  async generateBillsFromRule(ruleId: Id, throughDate: IsoDate, actorId: Id): Promise<Bill[]> {
     const rule = await this.one<import('../types').RecurringRule>('recurring_rules', ruleId)
     if (!rule) throw new Error('Regra recorrente não encontrada.')
 
     const existing = await this.many<Bill>('bills', 'recurring_rule_id', rule.id)
     const alreadyGenerated = new Set(existing.map((b) => b.dueDate))
 
-    const dates = occurrencesBetween(rule, rule.startDate, throughDate).filter(
-      (date) => !alreadyGenerated.has(date),
+    const occurrences = scheduledOccurrences(rule, rule.startDate, throughDate).filter(
+      (occurrence) => !alreadyGenerated.has(occurrence.date),
     )
 
-    const bills = dates.map((dueDate) =>
+    const bills = occurrences.map(({ date: dueDate, installmentNumber, installmentTotal }) =>
       stampNew<Bill>({
         workspaceId: rule.workspaceId,
         direction: rule.kind === 'income' ? 'receivable' : 'payable',
@@ -341,9 +341,9 @@ export class SupabaseOperations implements Operations {
         costCenter: rule.costCenter,
         accountId: rule.accountId,
         recurringRuleId: rule.id,
-        installmentNumber: null,
-        installmentTotal: null,
-        createdBy: rule.workspaceId,
+        installmentNumber,
+        installmentTotal,
+        createdBy: actorId,
         notes: null,
       }),
     )

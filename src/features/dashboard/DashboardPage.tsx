@@ -184,7 +184,10 @@ function FinancialDashboard() {
         .slice(0, 6),
       series,
       costCenters: expensesByCostCenter(current, COST_CENTER_LABEL).slice(0, 8),
-      monthlyOperationCost: totalMonthlyCost(rules.filter((r) => r.active && r.kind === 'expense')),
+      monthlyOperationCost: totalMonthlyCost(
+        rules.filter((r) => r.active && r.kind === 'expense'),
+        today(),
+      ),
       burn,
       runway: runwayMonths(cash, burn),
       target,

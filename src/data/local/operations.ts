@@ -1,7 +1,7 @@
 import { nowIso, toIsoDate, type IsoDate } from '@/lib/date'
 import { sumCents } from '@/lib/money'
 import { persistedStatus } from '@/domain/bills'
-import { occurrencesBetween } from '@/domain/recurrence'
+import { scheduledOccurrences } from '@/domain/recurrence'
 import { buildReceivables } from '../receivables'
 import type { NewEntity, Operations } from '../contracts'
 import type {
@@ -324,7 +324,7 @@ export class LocalOperations implements Operations {
    * sem risco de duplicar cobrança — e é exatamente o que o `autoGenerate`
    * faz.
    */
-  async generateBillsFromRule(ruleId: Id, throughDate: IsoDate): Promise<Bill[]> {
+  async generateBillsFromRule(ruleId: Id, throughDate: IsoDate, actorId: Id): Promise<Bill[]> {
     return db.transaction('rw', [db.recurringRules, db.bills], async () => {
       const rule = await db.recurringRules.get(ruleId)
       if (!rule) throw new Error('Regra recorrente não encontrada.')
@@ -332,11 +332,11 @@ export class LocalOperations implements Operations {
       const existing = await db.bills.where('recurringRuleId').equals(rule.id).toArray()
       const alreadyGenerated = new Set(existing.map((bill) => bill.dueDate))
 
-      const dates = occurrencesBetween(rule, rule.startDate, throughDate).filter(
-        (date) => !alreadyGenerated.has(date),
+      const occurrences = scheduledOccurrences(rule, rule.startDate, throughDate).filter(
+        (occurrence) => !alreadyGenerated.has(occurrence.date),
       )
 
-      const bills = dates.map((dueDate) =>
+      const bills = occurrences.map(({ date: dueDate, installmentNumber, installmentTotal }) =>
         stampNew<Bill>({
           workspaceId: rule.workspaceId,
           direction: rule.kind === 'income' ? 'receivable' : 'payable',
@@ -351,9 +351,9 @@ export class LocalOperations implements Operations {
           costCenter: rule.costCenter,
           accountId: rule.accountId,
           recurringRuleId: rule.id,
-          installmentNumber: null,
-          installmentTotal: null,
-          createdBy: rule.workspaceId,
+          installmentNumber,
+          installmentTotal,
+          createdBy: actorId,
           notes: null,
         }),
       )

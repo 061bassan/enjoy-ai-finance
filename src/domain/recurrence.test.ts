@@ -2,9 +2,15 @@ import { describe, expect, it } from 'vitest'
 import type { Bill, RecurringRule } from '@/data/types'
 import {
   billsDueForAutoSettlement,
+  installmentCorrections,
+  installmentPlan,
+  isInstallmentPlanFinished,
+  lastInstallmentDate,
   monthlyEquivalent,
   nextOccurrence,
   occurrencesBetween,
+  scheduledOccurrences,
+  totalMonthlyCost,
 } from './recurrence'
 
 type RuleShape = Pick<
@@ -233,5 +239,139 @@ describe('billsDueForAutoSettlement', () => {
       '2026-03-15',
     )
     expect(due).toHaveLength(0)
+  })
+})
+
+describe('contas parceladas', () => {
+  // HD externo: 10 parcelas, cadastrado já na 3ª, vencendo dia 10.
+  const parcelado = {
+    ...rule({ startDate: '2026-10-10' }),
+    installmentTotal: 10,
+    installmentStart: 3,
+  }
+
+  it('numera cada ocorrência a partir da parcela inicial', () => {
+    const occurrences = scheduledOccurrences(parcelado, '2026-10-01', '2026-12-31')
+    expect(occurrences).toEqual([
+      { date: '2026-10-10', installmentNumber: 3, installmentTotal: 10 },
+      { date: '2026-11-10', installmentNumber: 4, installmentTotal: 10 },
+      { date: '2026-12-10', installmentNumber: 5, installmentTotal: 10 },
+    ])
+  })
+
+  it('para depois da última parcela', () => {
+    const dates = occurrencesBetween(parcelado, '2026-01-01', '2030-12-31')
+    // Parcelas 3..10 = 8 títulos, de out/2026 a mai/2027.
+    expect(dates).toHaveLength(8)
+    expect(dates.at(-1)).toBe('2027-05-10')
+    expect(lastInstallmentDate(parcelado)).toBe('2027-05-10')
+  })
+
+  it('mantém a numeração quando a janela começa no meio', () => {
+    const [first] = scheduledOccurrences(parcelado, '2027-02-01', '2027-02-28')
+    expect(first).toEqual({ date: '2027-02-10', installmentNumber: 7, installmentTotal: 10 })
+  })
+
+  it('regra sem parcelas continua sem fim e sem número', () => {
+    const [first] = scheduledOccurrences(rule(), '2026-01-01', '2026-01-31')
+    expect(first).toEqual({ date: '2026-01-10', installmentNumber: null, installmentTotal: null })
+    expect(lastInstallmentDate(rule())).toBeNull()
+  })
+
+  it('nextOccurrence some depois da última parcela', () => {
+    expect(nextOccurrence(parcelado, '2027-05-11')).toBeNull()
+  })
+
+  it('parcela inicial inválida cai para 1 em vez de gerar 0/10', () => {
+    expect(installmentPlan({ installmentTotal: 10, installmentStart: 0 })).toEqual({
+      start: 1,
+      total: 10,
+    })
+    expect(installmentPlan({ installmentTotal: 10, installmentStart: 11 })).toEqual({
+      start: 1,
+      total: 10,
+    })
+    expect(installmentPlan({ installmentTotal: null })).toBeNull()
+  })
+
+  it('parcelamento quitado sai do custo mensal quando há data de referência', () => {
+    const full = {
+      ...parcelado,
+      id: 'r1',
+      workspaceId: 'w',
+      name: 'HD externo',
+      kind: 'expense',
+      amountCents: 10000,
+      categoryId: null,
+      costCenter: null,
+      accountId: null,
+      autoGenerate: true,
+      autoSettle: false,
+      createdAt: '',
+      updatedAt: '',
+    } as RecurringRule
+    expect(isInstallmentPlanFinished(full, '2027-05-10')).toBe(false)
+    expect(isInstallmentPlanFinished(full, '2027-05-11')).toBe(true)
+    expect(totalMonthlyCost([full], '2027-01-01')).toBe(10000)
+    expect(totalMonthlyCost([full], '2027-06-01')).toBe(0)
+    // Sem data, o comportamento antigo: soma tudo.
+    expect(totalMonthlyCost([full])).toBe(10000)
+  })
+})
+
+describe('installmentCorrections', () => {
+  const parcelado = {
+    ...rule({ startDate: '2026-10-10' }),
+    installmentTotal: 3,
+    installmentStart: 1,
+  }
+  const bill = (id: string, dueDate: string, status: Bill['status'] = 'open') => ({
+    id,
+    dueDate,
+    status,
+    installmentNumber: null,
+    installmentTotal: null,
+  })
+
+  it('numera os títulos em aberto já gerados', () => {
+    const corrections = installmentCorrections(
+      parcelado,
+      [bill('a', '2026-10-10'), bill('b', '2026-11-10')],
+      new Set(),
+    )
+    expect(corrections).toEqual([
+      { id: 'a', patch: { installmentNumber: 1, installmentTotal: 3 } },
+      { id: 'b', patch: { installmentNumber: 2, installmentTotal: 3 } },
+    ])
+  })
+
+  it('cancela (não apaga) o título que passou da última parcela', () => {
+    const corrections = installmentCorrections(parcelado, [bill('d', '2027-01-10')], new Set())
+    expect(corrections).toEqual([{ id: 'd', patch: { status: 'canceled' } }])
+  })
+
+  it('não toca em título pago, parcial ou com baixa', () => {
+    const corrections = installmentCorrections(
+      parcelado,
+      [
+        bill('p', '2026-10-10', 'paid'),
+        bill('x', '2026-11-10', 'partial'),
+        bill('y', '2027-01-10'),
+      ],
+      new Set(['y']),
+    )
+    expect(corrections).toEqual([])
+  })
+
+  it('não faz nada quando a numeração já confere', () => {
+    const ok = { ...bill('a', '2026-10-10'), installmentNumber: 1, installmentTotal: 3 }
+    expect(installmentCorrections(parcelado, [ok], new Set())).toEqual([])
+  })
+
+  it('ao deixar de ser parcelada, limpa o número dos títulos em aberto', () => {
+    const numbered = { ...bill('a', '2026-10-10'), installmentNumber: 1, installmentTotal: 3 }
+    expect(
+      installmentCorrections(rule({ startDate: '2026-10-10' }), [numbered], new Set()),
+    ).toEqual([{ id: 'a', patch: { installmentNumber: null, installmentTotal: null } }])
   })
 })

@@ -147,7 +147,10 @@ export function ExecutivePage() {
       roi: kpis.roi,
       burn,
       runway: runwayMonths(cash, burn),
-      operationCost: totalMonthlyCost(rules.filter((r) => r.active && r.kind === 'expense')),
+      operationCost: totalMonthlyCost(
+        rules.filter((r) => r.active && r.kind === 'expense'),
+        today(),
+      ),
       workingCapitalCents: workingCapital(bills, payments),
       forecast,
       outstandingReceivable: totalOutstanding(receivables),

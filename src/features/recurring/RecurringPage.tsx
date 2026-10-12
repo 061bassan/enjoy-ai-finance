@@ -2,11 +2,27 @@ import * as React from 'react'
 import { toast } from 'sonner'
 import { CalendarPlus, MoreHorizontal, Pencil, Plus, Repeat, Trash2 } from 'lucide-react'
 import { data } from '@/data'
-import { addMonths, formatDate, fromIsoDate, toIsoDate, today } from '@/lib/date'
+import {
+  addMonths,
+  formatDate,
+  formatMonthLong,
+  fromIsoDate,
+  rangeOfMonth,
+  toIsoDate,
+  today,
+} from '@/lib/date'
 import { formatMoney, formatPercent } from '@/lib/money'
 import { COST_CENTER_LABEL, COST_CENTERS, FREQUENCY_LABEL, optionsFrom } from '@/data/enums'
 import type { CostCenter, Frequency, RecurringRule } from '@/data/types'
-import { monthlyEquivalent, nextOccurrence, totalMonthlyCost } from '@/domain/recurrence'
+import {
+  installmentCorrections,
+  installmentPlan,
+  isInstallmentPlanFinished,
+  lastInstallmentDate,
+  monthlyEquivalent,
+  scheduledOccurrences,
+  totalMonthlyCost,
+} from '@/domain/recurrence'
 import { useSession } from '@/app/session'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { DateField } from '@/components/DateField'
@@ -51,6 +67,8 @@ import {
 } from '@/components/ui/table'
 import {
   useAccounts,
+  useBillPayments,
+  useBills,
   useCategories,
   useCreate,
   useGenerateBillsFromRule,
@@ -60,6 +78,13 @@ import {
 } from '@/hooks/data'
 
 const NONE = '__none__'
+
+/** Próxima ocorrência a partir de hoje, já com o número da parcela. */
+function nextScheduled(rule: RecurringRule) {
+  const from = today()
+  const horizon = toIsoDate(addMonths(fromIsoDate(from), 24))
+  return scheduledOccurrences(rule, from, horizon)[0] ?? null
+}
 
 /**
  * Custos recorrentes — a tela que responde "quanto custa manter a Enjoy de pé".
@@ -94,7 +119,9 @@ export function RecurringPage() {
   )
 
   const metrics = React.useMemo(() => {
-    const active = rules.filter((rule) => rule.active)
+    // Parcelamento quitado sai do custo de operação mesmo com a regra ligada.
+    const asOf = today()
+    const active = rules.filter((rule) => rule.active && !isInstallmentPlanFinished(rule, asOf))
     const expenses = active.filter((rule) => rule.kind === 'expense')
     const incomes = active.filter((rule) => rule.kind === 'income')
 
@@ -133,7 +160,14 @@ export function RecurringPage() {
     // Gera os títulos dos próximos 3 meses. A operação é idempotente:
     // datas já geradas são puladas, então clicar duas vezes não duplica.
     const throughDate = toIsoDate(addMonths(fromIsoDate(today()), 3))
-    const bills = await generate.mutateAsync({ ruleId: rule.id, throughDate })
+    if (!session) return
+    let bills
+    try {
+      bills = await generate.mutateAsync({ ruleId: rule.id, throughDate, actorId: session.user.id })
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : 'Não foi possível gerar os títulos.')
+      return
+    }
     toast.success(
       bills.length
         ? `${bills.length} ${bills.length === 1 ? 'título gerado' : 'títulos gerados'}.`
@@ -234,7 +268,9 @@ export function RecurringPage() {
               </TableHeader>
               <TableBody>
                 {rules.map((rule) => {
-                  const next = nextOccurrence(rule, today())
+                  const next = nextScheduled(rule)
+                  const plan = installmentPlan(rule)
+                  const finished = isInstallmentPlanFinished(rule, today())
                   return (
                     <TableRow key={rule.id}>
                       <TableCell>
@@ -249,10 +285,22 @@ export function RecurringPage() {
                               Débito automático
                             </Badge>
                           )}
+                          {plan && (
+                            <Badge
+                              variant={finished ? 'muted' : 'outline'}
+                              className="shrink-0"
+                              title="Conta parcelada — para de gerar títulos depois da última parcela"
+                            >
+                              {finished ? 'Quitado' : `${plan.total}x`}
+                            </Badge>
+                          )}
                         </span>
                         <span className="block text-xs text-muted-foreground">
                           {rule.categoryId ? (categoryNames.get(rule.categoryId) ?? '—') : '—'}
                           {rule.costCenter && ` · ${COST_CENTER_LABEL[rule.costCenter]}`}
+                          {rule.totalAmountCents
+                            ? ` · total ${formatMoney(rule.totalAmountCents)}`
+                            : null}
                         </span>
                       </TableCell>
 
@@ -261,7 +309,12 @@ export function RecurringPage() {
                       </TableCell>
 
                       <TableCell className="hidden text-muted-foreground xl:table-cell">
-                        {next ? formatDate(next) : '—'}
+                        {next ? formatDate(next.date) : '—'}
+                        {next?.installmentNumber != null && (
+                          <span className="block text-xs">
+                            parcela {next.installmentNumber}/{next.installmentTotal}
+                          </span>
+                        )}
                       </TableCell>
 
                       <TableCell data-numeric>{formatMoney(rule.amountCents)}</TableCell>
@@ -372,6 +425,9 @@ function RuleDialog({
 }) {
   const create = useCreate('recurringRules', data.recurringRules)
   const update = useUpdate('recurringRules', data.recurringRules)
+  const updateBill = useUpdate('bills', data.bills)
+  const { data: bills = [] } = useBills()
+  const { data: payments = [] } = useBillPayments()
 
   const [name, setName] = React.useState('')
   const [kind, setKind] = React.useState<'expense' | 'income'>('expense')
@@ -383,6 +439,10 @@ function RuleDialog({
   const [costCenter, setCostCenter] = React.useState<CostCenter | ''>('')
   const [accountId, setAccountId] = React.useState(NONE)
   const [autoSettle, setAutoSettle] = React.useState(false)
+  const [installments, setInstallments] = React.useState(false)
+  const [totalAmountCents, setTotalAmountCents] = React.useState(0)
+  const [installmentTotal, setInstallmentTotal] = React.useState(2)
+  const [installmentStart, setInstallmentStart] = React.useState(1)
 
   React.useEffect(() => {
     if (!open) return
@@ -396,7 +456,16 @@ function RuleDialog({
     setCostCenter(rule?.costCenter ?? '')
     setAccountId(rule?.accountId ?? NONE)
     setAutoSettle(rule?.autoSettle ?? false)
+    setInstallments(Boolean(rule?.installmentTotal))
+    setTotalAmountCents(rule?.totalAmountCents ?? 0)
+    setInstallmentTotal(rule?.installmentTotal ?? 2)
+    setInstallmentStart(rule?.installmentStart ?? 1)
   }, [open, rule])
+
+  /** Valor total ÷ parcelas vira o valor da parcela — o que o título cobra. */
+  function applyTotal(total: number, count: number) {
+    if (total > 0 && count > 0) setAmountCents(Math.round(total / count))
+  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
@@ -412,6 +481,32 @@ function RuleDialog({
       toast.error('Selecione a conta antes de ligar o débito automático — é dela que a baixa sai.')
       return
     }
+    if (installments) {
+      if (!Number.isInteger(installmentTotal) || installmentTotal < 1) {
+        toast.error('Informe quantas parcelas existem no total.')
+        return
+      }
+      if (
+        !Number.isInteger(installmentStart) ||
+        installmentStart < 1 ||
+        installmentStart > installmentTotal
+      ) {
+        toast.error(`A parcela inicial precisa estar entre 1 e ${installmentTotal}.`)
+        return
+      }
+    }
+
+    // As colunas de parcela só entram no payload quando a regra é (ou era)
+    // parcelada. Regra comum salva exatamente os mesmos campos de antes — então
+    // ela continua funcionando mesmo num banco que ainda não recebeu a 0017.
+    const installmentFields =
+      installments || rule?.installmentTotal
+        ? {
+            installmentTotal: installments ? installmentTotal : null,
+            installmentStart: installments ? installmentStart : null,
+            totalAmountCents: installments && totalAmountCents > 0 ? totalAmountCents : null,
+          }
+        : {}
 
     const fields = {
       name: name.trim(),
@@ -424,33 +519,83 @@ function RuleDialog({
       dayOfMonth,
       startDate,
       autoSettle,
+      ...installmentFields,
     }
 
     if (rule) {
-      await update.mutateAsync({ id: rule.id, patch: fields })
-      // Os títulos já materializados não mudam sozinhos — dizer isso evita
-      // que alguém aumente o aluguel e ache que o previsto se ajustou.
+      try {
+        await update.mutateAsync({ id: rule.id, patch: fields })
+      } catch (cause) {
+        toast.error(cause instanceof Error ? cause.message : 'Não foi possível salvar a regra.')
+        return
+      }
+
+      // Numera (ou cancela, se passaram da última parcela) os títulos em aberto
+      // que a regra já tinha gerado — sem isso, quem transforma "HD externo" em
+      // parcelado só veria "3/10" a partir do próximo título gerado.
+      const updated = { ...rule, ...fields }
+      const paidBillIds = new Set(payments.map((payment) => payment.billId))
+      const corrections = installmentCorrections(
+        updated,
+        bills.filter((bill) => bill.recurringRuleId === rule.id),
+        paidBillIds,
+      )
+      for (const correction of corrections) {
+        await updateBill.mutateAsync({ id: correction.id, patch: correction.patch })
+      }
+
+      // Os títulos já materializados não mudam de valor sozinhos — dizer isso
+      // evita que alguém aumente o aluguel e ache que o previsto se ajustou.
       toast.success('Regra atualizada. Os títulos já gerados mantêm o valor antigo.')
       onOpenChange(false)
       return
     }
 
-    await create.mutateAsync({
-      workspaceId,
-      ...fields,
-      clientId: null,
-      interval: 1,
-      endDate: null,
-      autoGenerate: true,
-      active: true,
-      notes: null,
-    })
+    try {
+      await create.mutateAsync({
+        workspaceId,
+        ...fields,
+        clientId: null,
+        interval: 1,
+        endDate: null,
+        autoGenerate: true,
+        active: true,
+        notes: null,
+      })
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : 'Não foi possível criar a regra.')
+      return
+    }
 
     toast.success('Regra criada. Os títulos são gerados automaticamente em instantes.')
     onOpenChange(false)
   }
 
   const preview = amountCents ? monthlyEquivalent({ amountCents, frequency, interval: 1 }) : 0
+
+  // Prévia do parcelamento: qual parcela cai neste mês e quando termina. É o
+  // que deixa conferir "estamos na 3ª de 10" antes de salvar.
+  const installmentPreview = React.useMemo(() => {
+    if (!installments || installmentTotal < 1) return null
+    const draft = {
+      frequency,
+      interval: 1,
+      startDate,
+      endDate: null,
+      dayOfMonth,
+      active: true,
+      installmentTotal,
+      installmentStart,
+    }
+    const month = rangeOfMonth(today())
+    const first = scheduledOccurrences(
+      draft,
+      startDate,
+      toIsoDate(addMonths(fromIsoDate(startDate), 24)),
+    )[0]
+    const thisMonth = scheduledOccurrences(draft, month.from, month.to)[0]
+    return { first, thisMonth, last: lastInstallmentDate(draft) }
+  }, [installments, installmentTotal, installmentStart, frequency, startDate, dayOfMonth])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -493,7 +638,7 @@ function RuleDialog({
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="rule-amount">Valor</Label>
+              <Label htmlFor="rule-amount">{installments ? 'Valor da parcela' : 'Valor'}</Label>
               <MoneyInput id="rule-amount" value={amountCents} onChange={setAmountCents} />
             </div>
 
@@ -596,6 +741,95 @@ function RuleDialog({
             </div>
           )}
 
+          <div className="space-y-3 rounded-md border border-border p-3">
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-1">
+                <Label htmlFor="rule-installments">Conta parcelada</Label>
+                <p className="text-xs text-muted-foreground">
+                  Empréstimo, compra em N vezes: cada título em "A pagar" mostra a parcela (ex.:
+                  3/10) e a regra para de gerar títulos depois da última.
+                </p>
+              </div>
+              <Switch
+                id="rule-installments"
+                checked={installments}
+                onCheckedChange={setInstallments}
+              />
+            </div>
+
+            {installments && (
+              <>
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="rule-total-amount">Valor total</Label>
+                    <MoneyInput
+                      id="rule-total-amount"
+                      value={totalAmountCents}
+                      onChange={(value) => {
+                        setTotalAmountCents(value)
+                        applyTotal(value, installmentTotal)
+                      }}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="rule-installment-total">Nº de parcelas</Label>
+                    <Input
+                      id="rule-installment-total"
+                      type="number"
+                      min={1}
+                      value={installmentTotal}
+                      onChange={(event) => {
+                        const value = Number(event.target.value)
+                        setInstallmentTotal(value)
+                        applyTotal(totalAmountCents, value)
+                      }}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="rule-installment-start">Parcela no início</Label>
+                    <Input
+                      id="rule-installment-start"
+                      type="number"
+                      min={1}
+                      max={installmentTotal || undefined}
+                      value={installmentStart}
+                      onChange={(event) => setInstallmentStart(Number(event.target.value))}
+                    />
+                  </div>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  "Parcela no início" é o número da parcela que vence na primeira data da regra
+                  (campo Início). O valor da parcela é calculado do total, mas pode ser ajustado
+                  acima.
+                </p>
+                {installmentPreview?.first && (
+                  <div className="rounded-md bg-surface-1 p-2.5 text-sm">
+                    {installmentPreview.thisMonth ? (
+                      <>
+                        Em {formatMonthLong(installmentPreview.thisMonth.date)} vence a parcela{' '}
+                        <strong className="tabular-nums">
+                          {installmentPreview.thisMonth.installmentNumber}/{installmentTotal}
+                        </strong>
+                        .{' '}
+                      </>
+                    ) : (
+                      <>
+                        Primeira parcela gerada:{' '}
+                        <strong className="tabular-nums">
+                          {installmentPreview.first.installmentNumber}/{installmentTotal}
+                        </strong>{' '}
+                        em {formatDate(installmentPreview.first.date)}.{' '}
+                      </>
+                    )}
+                    {installmentPreview.last && (
+                      <>Última parcela em {formatDate(installmentPreview.last)}.</>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
           <div className="flex items-start justify-between gap-4 rounded-md border border-border p-3">
             <div className="space-y-1">
               <Label htmlFor="rule-auto-settle">Débito automático</Label>
@@ -614,8 +848,8 @@ function RuleDialog({
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={create.isPending}>
-              Criar regra
+            <Button type="submit" disabled={create.isPending || update.isPending}>
+              {rule ? 'Salvar' : 'Criar regra'}
             </Button>
           </DialogFooter>
         </form>
