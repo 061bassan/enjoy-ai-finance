@@ -70,6 +70,12 @@ import { BillDialog } from './BillDialog'
 import { SettleBillDialog } from './SettleBillDialog'
 
 const ALL = '__all__'
+/** Filtro padrão: só o que ainda falta pagar/receber (aberto, vencido ou parcial). */
+const PENDING = '__pending__'
+
+function isPending(status: DisplayBillStatus) {
+  return status !== 'paid' && status !== 'canceled'
+}
 
 const STATUS_LABEL: Record<DisplayBillStatus, string> = {
   ...BILL_STATUS_LABEL,
@@ -96,7 +102,11 @@ export function BillsPage({ direction }: { direction: BillDirection }) {
   const unsettle = useUnsettleBillPayment()
 
   const [search, setSearch] = React.useState('')
-  const [statusFilter, setStatusFilter] = React.useState<DisplayBillStatus | typeof ALL>(ALL)
+  // Abre mostrando só o pendente: o que já foi pago sai da frente, para a lista
+  // responder de cara "o que falta pagar?". Pago continua a um clique.
+  const [statusFilter, setStatusFilter] = React.useState<
+    DisplayBillStatus | typeof ALL | typeof PENDING
+  >(PENDING)
   const [onlyPeriod, setOnlyPeriod] = React.useState(true)
   const [settling, setSettling] = React.useState<BillView | null>(null)
   const [dialogOpen, setDialogOpen] = React.useState(false)
@@ -128,13 +138,30 @@ export function BillsPage({ direction }: { direction: BillDirection }) {
     [bills, payments, direction],
   )
 
+  const inPeriod = React.useMemo(
+    () =>
+      views.filter((view) =>
+        onlyPeriod ? view.bill.dueDate >= range.from && view.bill.dueDate <= range.to : true,
+      ),
+    [views, onlyPeriod, range],
+  )
+
+  /** Quantos pagos o filtro padrão está escondendo — vira o atalho "mostrar pagos". */
+  const hiddenPaid = React.useMemo(
+    () => (statusFilter === PENDING ? inPeriod.filter((view) => view.status === 'paid').length : 0),
+    [inPeriod, statusFilter],
+  )
+
   const filtered = React.useMemo(() => {
     const term = search.trim().toLowerCase()
-    return views
+    return inPeriod
       .filter((view) =>
-        onlyPeriod ? view.bill.dueDate >= range.from && view.bill.dueDate <= range.to : true,
+        statusFilter === ALL
+          ? true
+          : statusFilter === PENDING
+            ? isPending(view.status)
+            : view.status === statusFilter,
       )
-      .filter((view) => (statusFilter === ALL ? true : view.status === statusFilter))
       .filter((view) =>
         term
           ? view.bill.partyName.toLowerCase().includes(term) ||
@@ -142,7 +169,7 @@ export function BillsPage({ direction }: { direction: BillDirection }) {
           : true,
       )
       .sort((a, b) => a.bill.dueDate.localeCompare(b.bill.dueDate))
-  }, [views, onlyPeriod, range, statusFilter, search])
+  }, [inPeriod, statusFilter, search])
 
   const summary = React.useMemo(() => {
     const open = views.filter((v) => v.status !== 'paid' && v.status !== 'canceled')
@@ -293,15 +320,17 @@ export function BillsPage({ direction }: { direction: BillDirection }) {
           </div>
 
           <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as never)}>
-            <SelectTrigger className="w-[160px]">
+            <SelectTrigger className="w-[170px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value={PENDING}>{isReceivable ? 'A receber' : 'A pagar'}</SelectItem>
               <SelectItem value={ALL}>Todos os status</SelectItem>
               <SelectItem value="open">Em aberto</SelectItem>
               <SelectItem value="overdue">Vencido</SelectItem>
               <SelectItem value="partial">Parcial</SelectItem>
-              <SelectItem value="paid">Quitado</SelectItem>
+              <SelectItem value="paid">{isReceivable ? 'Recebido' : 'Pago'}</SelectItem>
+              <SelectItem value="canceled">Cancelado</SelectItem>
             </SelectContent>
           </Select>
 
@@ -324,8 +353,14 @@ export function BillsPage({ direction }: { direction: BillDirection }) {
         ) : filtered.length === 0 ? (
           <div className="p-4">
             <EmptyState
-              icon={Inbox}
-              title="Nenhum título encontrado"
+              icon={statusFilter === PENDING && hiddenPaid > 0 ? CheckCircle2 : Inbox}
+              title={
+                statusFilter === PENDING && hiddenPaid > 0
+                  ? isReceivable
+                    ? 'Tudo recebido neste período'
+                    : 'Tudo pago neste período'
+                  : 'Nenhum título encontrado'
+              }
               description="Ajuste os filtros ou o período no topo da tela."
             />
           </div>
@@ -347,7 +382,7 @@ export function BillsPage({ direction }: { direction: BillDirection }) {
             </TableHeader>
             <TableBody>
               {filtered.slice(0, pagination.count).map((view) => (
-                <TableRow key={view.bill.id}>
+                <TableRow key={view.bill.id} className={rowClassName(view.status)}>
                   <TableCell className="text-muted-foreground">
                     {formatDate(view.bill.dueDate)}
                   </TableCell>
@@ -375,7 +410,7 @@ export function BillsPage({ direction }: { direction: BillDirection }) {
                   </TableCell>
 
                   <TableCell>
-                    <StatusBadge view={view} />
+                    <StatusBadge view={view} isReceivable={isReceivable} />
                   </TableCell>
 
                   <TableCell data-numeric className="text-muted-foreground">
@@ -452,6 +487,22 @@ export function BillsPage({ direction }: { direction: BillDirection }) {
         nounPlural="títulos"
       />
 
+      {hiddenPaid > 0 && (
+        <div className="mt-3 text-center">
+          <Button variant="ghost" size="sm" onClick={() => setStatusFilter(ALL)}>
+            <CheckCircle2 className="text-positive" />
+            Mostrar {hiddenPaid} {hiddenPaid === 1 ? 'título' : 'títulos'}{' '}
+            {isReceivable
+              ? hiddenPaid === 1
+                ? 'recebido'
+                : 'recebidos'
+              : hiddenPaid === 1
+                ? 'pago'
+                : 'pagos'}
+          </Button>
+        </div>
+      )}
+
       <SettleBillDialog
         view={settling}
         accounts={accounts}
@@ -522,15 +573,33 @@ export function BillsPage({ direction }: { direction: BillDirection }) {
   )
 }
 
-function StatusBadge({ view }: { view: BillView }) {
+function StatusBadge({ view, isReceivable }: { view: BillView; isReceivable: boolean }) {
   if (view.status === 'overdue') {
     return (
       <Badge variant="negative">
-        {view.daysLate} {view.daysLate === 1 ? 'dia' : 'dias'}
+        Vencido · {view.daysLate} {view.daysLate === 1 ? 'dia' : 'dias'}
       </Badge>
     )
   }
-  if (view.status === 'paid') return <Badge variant="positive">Quitado</Badge>
+  if (view.status === 'paid') {
+    return (
+      <Badge variant="positive" className="gap-1">
+        <CheckCircle2 className="h-3 w-3" /> {isReceivable ? 'Recebido' : 'Pago'}
+      </Badge>
+    )
+  }
   if (view.status === 'partial') return <Badge variant="outline">Parcial</Badge>
+  if (view.status === 'open') return <Badge variant="outline">Em aberto</Badge>
   return <Badge variant="muted">{STATUS_LABEL[view.status]}</Badge>
+}
+
+/**
+ * Pago fica verde e cancelado fica apagado — o status precisa ser lido de
+ * longe, sem procurar a coluna. A cor vem dos tokens `positive` do tema, os
+ * mesmos do badge, então funciona no claro e no escuro.
+ */
+function rowClassName(status: DisplayBillStatus) {
+  if (status === 'paid') return 'bg-positive/10 hover:bg-positive/15'
+  if (status === 'canceled') return 'opacity-55 [&_td]:line-through [&_td:last-child]:no-underline'
+  return undefined
 }
