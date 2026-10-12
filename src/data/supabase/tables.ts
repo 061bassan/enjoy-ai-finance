@@ -35,6 +35,7 @@ export const COLLECTIONS: readonly CollectionMeta[] = [
   { key: 'sales', table: 'sales', scoped: true },
   { key: 'saleCosts', table: 'sale_costs', scoped: true },
   { key: 'commercialDays', table: 'commercial_days', scoped: true },
+  { key: 'commercialMeetings', table: 'commercial_meetings', scoped: true },
   { key: 'marketingEntries', table: 'marketing_entries', scoped: true },
   { key: 'monthlyTargets', table: 'monthly_targets', scoped: true },
   { key: 'goals', table: 'goals', scoped: true },

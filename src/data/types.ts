@@ -558,6 +558,49 @@ export interface SaleCost extends ScopedEntity {
 }
 
 // ---------------------------------------------------------------------------
+// Comercial — reuniões
+// ---------------------------------------------------------------------------
+
+/**
+ * Onde a reunião está.
+ *
+ * `fechada` é o que a pessoa diz que aconteceu na call; quem prova a venda é o
+ * módulo de Vendas. As métricas contam venda pela venda cadastrada (casada por
+ * nome ou vinculada à mão), e marcam a reunião "fechada" sem venda atrás como
+ * pendência — senão o win rate subiria com venda que ninguém registrou.
+ */
+export type MeetingStatus =
+  'agendada' | 'realizada' | 'no_show' | 'proposta' | 'fechada' | 'perdida'
+
+/**
+ * Uma reunião (call) com um lead — uma linha da planilha "Métricas Comercial".
+ *
+ * É o elo entre o tráfego e a venda: o lead chega pelo Marketing, vira
+ * reunião aqui, e a venda cadastrada em Vendas com o mesmo nome fecha o
+ * ciclo. Win rate, custo por reunião e conversão por criativo saem daqui.
+ */
+export interface CommercialMeeting extends ScopedEntity {
+  date: IsoDate
+  /** Nome do lead/cliente — é por ele que a venda é encontrada. */
+  name: string
+  status: MeetingStatus
+  /** O que foi oferecido, como se fala no dia a dia ("PEAP 9k", "Start + tráfego"). */
+  proposal?: string | null
+  product?: SaleProduct | null
+  /** Quem fez a call. Texto livre: às vezes são duas pessoas ("João e Diogo"). */
+  hostName?: string | null
+  /** Criativo ou origem que gerou a call ("Depoimento Rafaela V2", "Orgânico"). */
+  creative?: string | null
+  /**
+   * Venda vinculada à mão. Vence o casamento por nome — serve para quando o
+   * nome da reunião e o da venda não batem ("Raphela" × "Raphaela Souza").
+   */
+  saleId?: Id | null
+  notes?: string | null
+  createdBy: Id
+}
+
+// ---------------------------------------------------------------------------
 // Comercial — registro diário
 // ---------------------------------------------------------------------------
 

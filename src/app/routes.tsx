@@ -48,6 +48,11 @@ const LeadsPage = lazy(() =>
 const MarketingPage = lazy(() =>
   import('@/features/marketing/MarketingPage').then((m) => ({ default: m.MarketingPage })),
 )
+const CommercialMetricsPage = lazy(() =>
+  import('@/features/commercialMetrics/CommercialMetricsPage').then((m) => ({
+    default: m.CommercialMetricsPage,
+  })),
+)
 const CommercialPage = lazy(() =>
   import('@/features/commercial/CommercialPage').then((m) => ({ default: m.CommercialPage })),
 )
@@ -169,6 +174,7 @@ export function AppRoutes() {
                   <Route path="clientes" element={<ClientsPage />} />
                   <Route path="marketing" element={<MarketingPage />} />
                   <Route path="comercial" element={<CommercialPage />} />
+                  <Route path="metricas-comerciais" element={<CommercialMetricsPage />} />
                   <Route path="performance" element={<PerformancePage />} />
                   <Route path="executivo" element={<ExecutivePage />} />
                   <Route path="metas" element={<GoalsPage />} />

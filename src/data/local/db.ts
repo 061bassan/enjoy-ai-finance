@@ -11,6 +11,7 @@ import type {
   Category,
   Client,
   CommercialDay,
+  CommercialMeeting,
   Goal,
   GoalContribution,
   Lead,
@@ -55,6 +56,7 @@ export class EnjoyDatabase extends Dexie {
   sales!: EntityTable<Sale, 'id'>
   saleCosts!: EntityTable<SaleCost, 'id'>
   commercialDays!: EntityTable<CommercialDay, 'id'>
+  commercialMeetings!: EntityTable<CommercialMeeting, 'id'>
   marketingEntries!: EntityTable<MarketingEntry, 'id'>
 
   monthlyTargets!: EntityTable<MonthlyTarget, 'id'>
@@ -127,8 +129,7 @@ export class EnjoyDatabase extends Dexie {
       leads:
         'id, workspaceId, stage, ownerId, source, enteredAt, clientId, saleId, nextActionAt, [workspaceId+stage], [workspaceId+enteredAt], [workspaceId+ownerId]',
       leadActivities: 'id, workspaceId, leadId, date, kind, [workspaceId+date], [leadId+date]',
-      members:
-        'id, workspaceId, userId, [workspaceId+userId], role, status, [workspaceId+status]',
+      members: 'id, workspaceId, userId, [workspaceId+userId], role, status, [workspaceId+status]',
     })
 
     /**
@@ -142,6 +143,14 @@ export class EnjoyDatabase extends Dexie {
     this.version(4).stores({
       marketingEntries:
         'id, workspaceId, month, channel, [workspaceId+month], [workspaceId+month+channel]',
+    })
+
+    /**
+     * v5: reuniões com leads (painel de Métricas comerciais). Tabela nova —
+     * as anteriores não mudam, então quem já tem dados não perde nada.
+     */
+    this.version(5).stores({
+      commercialMeetings: 'id, workspaceId, date, status, saleId, [workspaceId+date]',
     })
   }
 }
@@ -165,6 +174,7 @@ export const TABLE_NAMES = [
   'sales',
   'saleCosts',
   'commercialDays',
+  'commercialMeetings',
   'marketingEntries',
   'monthlyTargets',
   'goals',
@@ -186,6 +196,7 @@ export const DATE_FIELD: Partial<Record<TableName, string>> = {
   billPayments: 'date',
   sales: 'saleDate',
   commercialDays: 'date',
+  commercialMeetings: 'date',
   // Leads são filtrados pela data de ENTRADA: a pergunta do funil é sempre
   // "de tudo que chegou no período, quanto virou venda".
   leads: 'enteredAt',
