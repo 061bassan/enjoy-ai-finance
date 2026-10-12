@@ -470,7 +470,7 @@ export interface LeadActivity extends ScopedEntity {
 export type SaleModel = 'mrr' | 'setup' | 'projeto' | 'consultoria' | 'servico' | 'tcv'
 
 /** Produtos da Enjoy. O valor de cada venda é negociado — o produto não tem preço fixo. */
-export type SaleProduct = 'enjoy_pro' | 'enjoy_growth' | 'enjoy_rec'
+export type SaleProduct = 'enjoy_start' | 'enjoy_pro' | 'enjoy_growth' | 'enjoy_rec'
 
 export type LeadSource =
   | 'inbound'
