@@ -230,8 +230,14 @@ export interface Operations {
    */
   deleteTransaction(transactionId: Id): Promise<void>
 
-  /** Materializa os títulos de uma regra recorrente até a data limite. */
-  generateBillsFromRule(ruleId: Id, throughDate: string): Promise<Bill[]>
+  /**
+   * Materializa os títulos de uma regra recorrente até a data limite.
+   *
+   * `actorId` vira o `createdBy` dos títulos. No Postgres `bills.created_by`
+   * referencia `profiles(id)` — sem um perfil de verdade a inserção é recusada
+   * (e foi exatamente isso que deixou "A pagar" vazio em produção).
+   */
+  generateBillsFromRule(ruleId: Id, throughDate: string, actorId: Id): Promise<Bill[]>
 
   /** Move um card e executa a ação da coluna de destino, se houver. */
   moveCard(input: {

@@ -160,7 +160,14 @@ export function RecurringPage() {
     // Gera os títulos dos próximos 3 meses. A operação é idempotente:
     // datas já geradas são puladas, então clicar duas vezes não duplica.
     const throughDate = toIsoDate(addMonths(fromIsoDate(today()), 3))
-    const bills = await generate.mutateAsync({ ruleId: rule.id, throughDate })
+    if (!session) return
+    let bills
+    try {
+      bills = await generate.mutateAsync({ ruleId: rule.id, throughDate, actorId: session.user.id })
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : 'Não foi possível gerar os títulos.')
+      return
+    }
     toast.success(
       bills.length
         ? `${bills.length} ${bills.length === 1 ? 'título gerado' : 'títulos gerados'}.`

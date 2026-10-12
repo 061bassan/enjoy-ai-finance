@@ -21,7 +21,7 @@ const HORIZON_MONTHS = 3
  * caixa. A baixa continua sendo uma decisão de quem confirma o pagamento.
  */
 export function useAutoGenerateRecurringBills() {
-  const { allow } = useSession()
+  const { session, allow } = useSession()
   const canManage = allow('manage:recurring')
   const { data: rules = [] } = useRecurringRules()
   const generate = useGenerateBillsFromRule()
@@ -32,7 +32,8 @@ export function useAutoGenerateRecurringBills() {
   const attempted = React.useRef(new Set<string>())
 
   React.useEffect(() => {
-    if (!canManage) return
+    if (!canManage || !session) return
+    const actorId = session.user.id
 
     const throughDate = toIsoDate(addMonths(fromIsoDate(today()), HORIZON_MONTHS))
 
@@ -40,14 +41,17 @@ export function useAutoGenerateRecurringBills() {
       if (!rule.active || attempted.current.has(rule.id)) continue
       attempted.current.add(rule.id)
 
-      generateRef.current({ ruleId: rule.id, throughDate }).catch(() => {
+      generateRef.current({ ruleId: rule.id, throughDate, actorId }).catch((cause: unknown) => {
+        // Falha silenciosa foi o que escondeu que nenhum título nascia em
+        // produção — fica pelo menos o rastro no console.
+        console.error(`[contas fixas] não foi possível gerar títulos de "${rule.name}"`, cause)
         // Tenta de novo na próxima vez que a lista de regras mudar (ou na
         // próxima sessão) — um erro pontual de rede não pode travar a regra
         // fora do fluxo automático para sempre.
         attempted.current.delete(rule.id)
       })
     }
-  }, [canManage, rules])
+  }, [canManage, session, rules])
 }
 
 /**

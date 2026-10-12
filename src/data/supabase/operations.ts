@@ -315,7 +315,7 @@ export class SupabaseOperations implements Operations {
     await this.rpc('op_delete_transactions', { p_ids: ids })
   }
 
-  async generateBillsFromRule(ruleId: Id, throughDate: IsoDate): Promise<Bill[]> {
+  async generateBillsFromRule(ruleId: Id, throughDate: IsoDate, actorId: Id): Promise<Bill[]> {
     const rule = await this.one<import('../types').RecurringRule>('recurring_rules', ruleId)
     if (!rule) throw new Error('Regra recorrente não encontrada.')
 
@@ -343,7 +343,7 @@ export class SupabaseOperations implements Operations {
         recurringRuleId: rule.id,
         installmentNumber,
         installmentTotal,
-        createdBy: rule.workspaceId,
+        createdBy: actorId,
         notes: null,
       }),
     )

@@ -61,7 +61,7 @@ describe('geração de títulos de conta parcelada', () => {
       totalAmountCents: 100_000,
     })
 
-    const bills = await ops.generateBillsFromRule(regra.id, '2027-12-31')
+    const bills = await ops.generateBillsFromRule(regra.id, '2027-12-31', ATOR)
 
     expect(bills.map((b) => [b.dueDate, b.installmentNumber, b.installmentTotal])).toEqual([
       ['2026-10-15', 2, 4],
@@ -73,18 +73,26 @@ describe('geração de títulos de conta parcelada', () => {
 
   it('regra comum continua gerando título sem número de parcela', async () => {
     const regra = await criarRegra({ name: 'Aluguel' })
-    const bills = await ops.generateBillsFromRule(regra.id, '2026-11-30')
+    const bills = await ops.generateBillsFromRule(regra.id, '2026-11-30', ATOR)
     expect(bills).toHaveLength(2)
     expect(bills.every((b) => b.installmentNumber == null && b.installmentTotal == null)).toBe(true)
   })
 
+  it('o autor do título é quem gerou, não o workspace', async () => {
+    // No Postgres `bills.created_by` referencia `profiles(id)`: com o id do
+    // workspace ali a inserção era recusada e nenhum título nascia.
+    const regra = await criarRegra({ name: 'Aluguel' })
+    const bills = await ops.generateBillsFromRule(regra.id, '2026-10-31', ATOR)
+    expect(bills.map((b) => b.createdBy)).toEqual([ATOR])
+  })
+
   it('título cancelado não é gerado de novo', async () => {
     const regra = await criarRegra({ name: 'Aluguel' })
-    const [outubro] = await ops.generateBillsFromRule(regra.id, '2026-10-31')
+    const [outubro] = await ops.generateBillsFromRule(regra.id, '2026-10-31', ATOR)
     if (!outubro) throw new Error('O título de outubro não foi gerado.')
 
     await db.bills.update(outubro.id, { status: 'canceled' })
-    const again = await ops.generateBillsFromRule(regra.id, '2026-11-30')
+    const again = await ops.generateBillsFromRule(regra.id, '2026-11-30', ATOR)
 
     expect(again.map((b) => b.dueDate)).toEqual(['2026-11-15'])
     expect((await db.bills.get(outubro.id))?.status).toBe('canceled')
@@ -94,7 +102,7 @@ describe('geração de títulos de conta parcelada', () => {
 describe('baixa do título gerado pela regra', () => {
   it('vira saída em Entradas e saídas, ligada ao título', async () => {
     const regra = await criarRegra({ installmentTotal: 10, installmentStart: 3 })
-    const [titulo] = await ops.generateBillsFromRule(regra.id, '2026-10-31')
+    const [titulo] = await ops.generateBillsFromRule(regra.id, '2026-10-31', ATOR)
     if (!titulo) throw new Error('O título não foi gerado.')
 
     const { bill, transaction } = await ops.settleBill({
@@ -114,7 +122,7 @@ describe('baixa do título gerado pela regra', () => {
 
   it('título cancelado não aceita baixa — não há saída dupla no caixa', async () => {
     const regra = await criarRegra()
-    const [titulo] = await ops.generateBillsFromRule(regra.id, '2026-10-31')
+    const [titulo] = await ops.generateBillsFromRule(regra.id, '2026-10-31', ATOR)
     if (!titulo) throw new Error('O título não foi gerado.')
     await db.bills.update(titulo.id, { status: 'canceled' })
 

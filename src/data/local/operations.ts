@@ -324,7 +324,7 @@ export class LocalOperations implements Operations {
    * sem risco de duplicar cobrança — e é exatamente o que o `autoGenerate`
    * faz.
    */
-  async generateBillsFromRule(ruleId: Id, throughDate: IsoDate): Promise<Bill[]> {
+  async generateBillsFromRule(ruleId: Id, throughDate: IsoDate, actorId: Id): Promise<Bill[]> {
     return db.transaction('rw', [db.recurringRules, db.bills], async () => {
       const rule = await db.recurringRules.get(ruleId)
       if (!rule) throw new Error('Regra recorrente não encontrada.')
@@ -353,7 +353,7 @@ export class LocalOperations implements Operations {
           recurringRuleId: rule.id,
           installmentNumber,
           installmentTotal,
-          createdBy: rule.workspaceId,
+          createdBy: actorId,
           notes: null,
         }),
       )

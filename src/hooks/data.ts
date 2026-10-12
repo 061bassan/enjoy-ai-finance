@@ -304,8 +304,15 @@ export function useRejectMember() {
 export function useGenerateBillsFromRule() {
   const invalidate = useInvalidate()
   return useMutation({
-    mutationFn: ({ ruleId, throughDate }: { ruleId: Id; throughDate: string }) =>
-      data.ops.generateBillsFromRule(ruleId, throughDate),
+    mutationFn: ({
+      ruleId,
+      throughDate,
+      actorId,
+    }: {
+      ruleId: Id
+      throughDate: string
+      actorId: Id
+    }) => data.ops.generateBillsFromRule(ruleId, throughDate, actorId),
     onSuccess: () => invalidate(['bills', 'recurringRules']),
   })
 }
