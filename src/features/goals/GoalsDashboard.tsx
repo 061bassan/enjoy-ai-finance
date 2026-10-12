@@ -861,7 +861,7 @@ function HistoryTooltip({
   const ratio = point.target ? point.realized / point.target : 0
   return (
     <div className="rounded-md border border-border bg-popover px-3 py-2 text-xs shadow-xl">
-      <p className="mb-1 font-medium capitalize">{formatMonthLong(point.month)}</p>
+      <p className="mb-1 font-medium first-letter:uppercase">{formatMonthLong(point.month)}</p>
       <TooltipRow color={REALIZED} label="Realizado" value={format(point.realized)} />
       <TooltipRow color={REFERENCE} label="Meta" value={format(point.target)} dashed />
       <p className="mt-1 text-muted-foreground">{formatPercent(ratio)} da meta</p>

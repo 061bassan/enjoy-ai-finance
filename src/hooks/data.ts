@@ -12,6 +12,7 @@ import type {
   Category,
   Client,
   CommercialDay,
+  CommercialMeeting,
   Goal,
   GoalContribution,
   Id,
@@ -106,6 +107,10 @@ export const useTransactions = (query?: ListQuery) =>
 export const useBills = (query?: ListQuery) => useCollection<Bill>('bills', data.bills, query)
 
 export const useSales = (query?: ListQuery) => useCollection<Sale>('sales', data.sales, query)
+
+/** Reuniões. Sem filtro de período: o painel recorta por mês no domínio. */
+export const useCommercialMeetings = () =>
+  useCollection<CommercialMeeting>('commercialMeetings', data.commercialMeetings)
 
 export const useCommercialDays = (query?: ListQuery) =>
   useCollection<CommercialDay>('commercialDays', data.commercialDays, query)

@@ -21,6 +21,7 @@ import type {
   Category,
   Client,
   CommercialDay,
+  CommercialMeeting,
   Goal,
   GoalContribution,
   Id,
@@ -340,6 +341,8 @@ export interface DataProvider {
   sales: Repository<Sale>
   saleCosts: Repository<SaleCost>
   commercialDays: Repository<CommercialDay>
+  /** Reuniões com leads — a ponte entre o tráfego e a venda. */
+  commercialMeetings: Repository<CommercialMeeting>
   /** Investimento de marketing, uma linha por mês e canal. */
   marketingEntries: Repository<MarketingEntry>
 

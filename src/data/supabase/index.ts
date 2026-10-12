@@ -11,6 +11,7 @@ import type {
   Category,
   Client,
   CommercialDay,
+  CommercialMeeting,
   Goal,
   GoalContribution,
   Lead,
@@ -75,6 +76,7 @@ export function createSupabaseProvider(): DataProvider {
     sales: createSupabaseRepository<Sale>(client, 'sales'),
     saleCosts: createSupabaseRepository<SaleCost>(client, 'sale_costs'),
     commercialDays: createSupabaseRepository<CommercialDay>(client, 'commercial_days'),
+    commercialMeetings: createSupabaseRepository<CommercialMeeting>(client, 'commercial_meetings'),
     marketingEntries: createSupabaseRepository<MarketingEntry>(client, 'marketing_entries'),
 
     monthlyTargets: createSupabaseRepository<MonthlyTarget>(client, 'monthly_targets'),

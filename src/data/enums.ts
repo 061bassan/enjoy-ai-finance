@@ -20,6 +20,7 @@ import type {
   LeadSource,
   LeadStage,
   MarketingChannel,
+  MeetingStatus,
   MemberStatus,
   PaymentMethod,
   PurchaseStatus,
@@ -106,6 +107,15 @@ export const CLIENT_STATUS_LABEL: Record<ClientStatus, string> = {
   active: 'Ativo',
   paused: 'Pausado',
   churned: 'Churn',
+}
+
+export const MEETING_STATUS_LABEL: Record<MeetingStatus, string> = {
+  agendada: 'Agendada',
+  realizada: 'Realizada',
+  no_show: 'No-show',
+  proposta: 'Proposta em análise',
+  fechada: 'Fechada',
+  perdida: 'Perdida',
 }
 
 export const SALE_PRODUCT_LABEL: Record<SaleProduct, string> = {
