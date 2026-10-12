@@ -36,7 +36,7 @@ contratos, as migrations `0001`–`0015` foram aplicadas num projeto real, e o a
 
 | Verificação | Estado |
 |---|---|
-| `npm run test` | 213 testes passando (13 arquivos: domínio, provider local, validações) |
+| `npm run test` | 230 testes passando (14 arquivos: domínio, provider local, validações) |
 | `npm run typecheck` | limpo |
 | `npm run lint` | 0 erros, 6 avisos `react-refresh/only-export-components` (inofensivos) |
 | `npm run build` | ok, ~18 s |
@@ -306,6 +306,15 @@ Poder decrescente: `owner` › `ceo` = `socio` › `admin` › `finance` › `sa
     (`BillPayment` + `Transaction`), mesma reversão via `unsettleBillPayment` se a baixa
     automática errar. Gate por `manage:bills` (a permissão que já governa qualquer baixa),
     não por `manage:recurring`.
+23. **Conta parcelada acaba sozinha; título de conta fixa se cancela, não se apaga.**
+    `RecurringRule.installmentTotal`/`installmentStart` (opcionais) fazem
+    `scheduledOccurrences` numerar cada título ("3/10", gravado nas colunas
+    `installmentNumber`/`installmentTotal` que `Bill` já tinha) e parar na última parcela;
+    `totalMonthlyCost(rules, asOf)` tira do custo de operação o parcelamento quitado. Ao
+    editar a regra, `installmentCorrections` renumera só os títulos `open` sem baixa e
+    **cancela** os que passaram da última parcela. Cancelar (menu do título em "A pagar") é
+    também o caminho para conta já paga e lançada por fora: excluir não serve, porque o
+    gerador recria a mesma data na próxima abertura; dar baixa duplicaria a saída.
 
 ---
 
@@ -324,7 +333,7 @@ Poder decrescente: `owner` › `ceo` = `socio` › `admin` › `finance` › `sa
 | `/transacoes` | `features/transactions/` | CRUD com filtros |
 | `/fluxo-de-caixa` | `features/cashflow/` | Previsto vs. realizado, capital de giro, runway |
 | `/a-receber` `/a-pagar` | `features/bills/` | Mesma página, prop `direction` |
-| `/recorrentes` | `features/recurring/` | Custo de operação mensal, títulos gerados sozinhos, baixa automática opcional por regra (ver invariante 22) |
+| `/recorrentes` | `features/recurring/` | Custo de operação mensal, títulos gerados sozinhos, contas parceladas, baixa automática opcional por regra (ver invariantes 22 e 23) |
 | `/metas` | `features/goals/` | Metas mensais + financeiras com projeção de data |
 | `/compras` | `features/purchases/` | Metas de compra com "quando cabe no caixa" |
 | `/kanban` | `features/kanban/` | Soltar em "Pago" liquida o título e lança no caixa |
@@ -453,6 +462,13 @@ As migrations (`supabase/migrations/`):
   (`src/hooks/recurring.ts`) baixa sozinho, na data de vencimento, os títulos que a regra
   gerou — ver invariante 22. **Ainda NÃO aplicada em produção** — precisa rodar antes de
   alguém ligar o débito automático numa regra com o provider Supabase.
+- `0017_recurring_installments.sql` — colunas opcionais `installment_total`,
+  `installment_start` e `total_amount_cents` em `recurring_rules` (conta parcelada, ver
+  invariante 23). Idempotente (`add column if not exists`), nada existente muda. A tela só
+  envia essas colunas quando a regra é (ou era) parcelada, então regra comum continua
+  salvando num banco sem a 0017 — mas **ligar "Conta parcelada" exige a 0017 aplicada**.
+  `scripts/2026-10-ajuste-contas-fixas.sql` é o ajuste único de outubro/2026 (cancela os
+  títulos de conta fixa já pagos por fora) — rodar à mão no SQL Editor, com a prévia antes.
 
 **Decisão-chave (a razão de as RPC serem finas):** a matemática (parcelamento em
 `buildReceivables`, status em `persistedStatus`, recorrência em `occurrencesBetween`) roda

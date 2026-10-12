@@ -316,6 +316,21 @@ export interface RecurringRule extends ScopedEntity {
    * de onde debitar.
    */
   autoSettle: boolean
+  /**
+   * Conta parcelada (empréstimo, compra em N vezes): quantas parcelas existem
+   * no total. `null`/ausente = conta fixa sem fim. Quando presente, a regra
+   * para de gerar títulos depois da última parcela — sem isso, um empréstimo
+   * quitado continuaria aparecendo em "A pagar" para sempre.
+   */
+  installmentTotal?: number | null
+  /**
+   * Número da parcela que vence na PRIMEIRA ocorrência da regra (a partir de
+   * `startDate`). Permite cadastrar um parcelamento que já está no meio —
+   * "estamos na 3ª de 10" — sem inventar títulos das parcelas já pagas.
+   */
+  installmentStart?: number | null
+  /** Valor total do parcelamento. Informativo: o título usa `amountCents` (a parcela). */
+  totalAmountCents?: Cents | null
   active: boolean
   notes?: string | null
 }
