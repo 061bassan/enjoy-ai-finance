@@ -25,6 +25,7 @@ import type {
   PurchaseStatus,
   Role,
   SaleModel,
+  SaleProduct,
   SaleStatus,
   TransactionKind,
   TransactionStatus,
@@ -105,6 +106,12 @@ export const CLIENT_STATUS_LABEL: Record<ClientStatus, string> = {
   active: 'Ativo',
   paused: 'Pausado',
   churned: 'Churn',
+}
+
+export const SALE_PRODUCT_LABEL: Record<SaleProduct, string> = {
+  enjoy_pro: 'Enjoy Pro',
+  enjoy_growth: 'Enjoy Growth',
+  enjoy_rec: 'Enjoy Rec',
 }
 
 export const SALE_MODEL_LABEL: Record<SaleModel, string> = {

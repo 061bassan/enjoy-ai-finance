@@ -1,11 +1,11 @@
 import * as React from 'react'
 import { toast } from 'sonner'
 import { formatMoney, formatMultiple, formatPercent, percentOf } from '@/lib/money'
-import { today } from '@/lib/date'
+import { addMonths, formatDate, fromIsoDate, toIsoDate, today } from '@/lib/date'
 import {
   LEAD_SOURCE_LABEL,
   PAYMENT_METHOD_LABEL,
-  SALE_MODEL_LABEL,
+  SALE_PRODUCT_LABEL,
   SALE_STATUS_LABEL,
   optionsFrom,
 } from '@/data/enums'
@@ -17,10 +17,12 @@ import type {
   Sale,
   SaleCost,
   SaleModel,
+  SaleProduct,
   SaleStatus,
 } from '@/data/types'
 import { useSession } from '@/app/session'
-import { useCreateSale, useUpdateSale } from '@/hooks/data'
+import { useAccounts, useCreateSale, useSettleBill, useUpdateSale } from '@/hooks/data'
+import { buildReceivables } from '@/data/receivables'
 import { DateField } from '@/components/DateField'
 import { MoneyInput } from '@/components/MoneyInput'
 import { Button } from '@/components/ui/button'
@@ -46,6 +48,14 @@ import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 const NONE = '__none__'
+
+type PayPlan = 'full' | 'installments' | 'entry'
+
+const PAY_PLAN_LABEL: Record<PayPlan, string> = {
+  full: 'À vista (pagamento completo)',
+  installments: 'Parcelado, sem entrada',
+  entry: 'Entrada + restante',
+}
 
 /**
  * Registro de venda — criação e edição no mesmo formulário.
@@ -78,6 +88,8 @@ export function SaleDialog({
   const { session } = useSession()
   const createSale = useCreateSale()
   const updateSale = useUpdateSale()
+  const settleBill = useSettleBill()
+  const { data: accounts = [] } = useAccounts()
   const isEditing = sale != null
 
   const [clientId, setClientId] = React.useState<string>(NONE)
@@ -100,6 +112,17 @@ export function SaleDialog({
   const [status, setStatus] = React.useState<SaleStatus>('pendente')
   const [notes, setNotes] = React.useState('')
   const [generateReceivables, setGenerateReceivables] = React.useState(true)
+
+  // Produto e forma de pagamento
+  const [product, setProduct] = React.useState<SaleProduct | ''>('')
+  /** TCV: à vista (um pagamento), parcelado (sem entrada) ou entrada + restante parcelado. */
+  const [payPlan, setPayPlan] = React.useState<PayPlan>('full')
+  const [downPaymentCents, setDownPaymentCents] = React.useState(0)
+  const [downPaymentDate, setDownPaymentDate] = React.useState(today())
+  const [firstDueDate, setFirstDueDate] = React.useState(today())
+  /** O 1º recebimento já caiu na conta: baixa o título e lança em Entradas e saídas. */
+  const [alreadyReceived, setAlreadyReceived] = React.useState(false)
+  const [receiveAccountId, setReceiveAccountId] = React.useState<string>(NONE)
 
   // Custos da venda
   const [adsCents, setAdsCents] = React.useState(0)
@@ -142,6 +165,13 @@ export function SaleDialog({
       setStatus('pendente')
       setNotes('')
       setGenerateReceivables(true)
+      setProduct('')
+      setPayPlan('full')
+      setDownPaymentCents(0)
+      setDownPaymentDate(today())
+      setFirstDueDate(today())
+      setAlreadyReceived(false)
+      setReceiveAccountId(NONE)
       setAdsCents(0)
       setOperationalCents(0)
       setTeamHoursCents(0)
@@ -177,6 +207,25 @@ export function SaleDialog({
     setNotes(sale.notes ?? '')
     // Refazer títulos é destrutivo: nunca vem marcado por padrão na edição.
     setGenerateReceivables(false)
+    setProduct(sale.product ?? '')
+    {
+      // Venda antiga não guardava a entrada: sem ela, o que existia era "tudo
+      // parcelado a partir da data da venda" — que é um TCV sem entrada.
+      const total = Math.max(0, sale.amountCents - sale.setupCents)
+      const down = sale.downPaymentCents ?? 0
+      setPayPlan(
+        down > 0 && down < total
+          ? 'entry'
+          : down === 0 && (sale.installments || 1) > 1
+            ? 'installments'
+            : 'full',
+      )
+      setDownPaymentCents(down)
+    }
+    setDownPaymentDate(sale.downPaymentDate ?? sale.saleDate)
+    setFirstDueDate(sale.firstDueDate ?? sale.saleDate)
+    setAlreadyReceived(false)
+    setReceiveAccountId(NONE)
     setAdsCents(saleCost?.adsCents ?? 0)
     setOperationalCents(saleCost?.operationalCents ?? 0)
     setTeamHoursCents(saleCost?.teamHoursCents ?? 0)
@@ -188,10 +237,102 @@ export function SaleDialog({
   }, [open, sale, saleCost])
 
   const hasRecurrence = model === 'mrr'
-  const months = hasRecurrence ? Math.max(1, contractMonths) : 0
+  // Meses de contrato (MRR) ou duração do projeto (TCV) — guardado nos dois casos.
+  const months = Math.max(1, contractMonths || 1)
 
   // TCV: tudo que o contrato vale ao longo da vida dele.
   const amountCents = hasRecurrence ? mrrCents * months + setupCents : setupCents + oneOffCents
+
+  /**
+   * Como a venda é paga, no formato que `buildReceivables` lê. MRR só precisa
+   * do 1º pagamento; no TCV o plano escolhido vira entrada, parcelas e datas.
+   * À vista é "entrada = total": um título só, na data do pagamento.
+   */
+  const payment = hasRecurrence
+    ? {
+        downPaymentCents: null,
+        downPaymentDate: null,
+        firstDueDate,
+        installments: Math.max(1, installments),
+      }
+    : payPlan === 'full'
+      ? {
+          downPaymentCents: oneOffCents,
+          downPaymentDate,
+          firstDueDate: downPaymentDate,
+          installments: 1,
+        }
+      : payPlan === 'installments'
+        ? {
+            downPaymentCents: null,
+            downPaymentDate: null,
+            firstDueDate,
+            installments: Math.max(1, installments),
+          }
+        : {
+            downPaymentCents,
+            downPaymentDate,
+            firstDueDate,
+            installments: Math.max(1, installments),
+          }
+  const balanceCents = Math.max(0, oneOffCents - downPaymentCents)
+
+  /** Prévia exata do que vai para "A receber" — a mesma função que o salvamento usa. */
+  const schedule = React.useMemo(() => {
+    if (amountCents <= 0) return []
+    let seq = 0
+    const draft = {
+      id: 'preview',
+      workspaceId: session?.workspaceId ?? '',
+      clientId: null,
+      clientName: clientName.trim() || 'Cliente',
+      saleDate,
+      closerId: null,
+      sdrId: null,
+      leadSource: null,
+      model,
+      product: product || null,
+      amountCents,
+      mrrCents: hasRecurrence ? mrrCents : 0,
+      setupCents,
+      contractMonths: months,
+      paymentMethod: null,
+      closerCommissionPercent: 0,
+      sdrCommissionPercent: 0,
+      status: 'pendente' as const,
+      createdBy: '',
+      createdAt: '',
+      updatedAt: '',
+      ...payment,
+    }
+    return buildReceivables(
+      draft,
+      payment.firstDueDate,
+      (bill) => ({ ...bill, id: `p${++seq}`, createdAt: '', updatedAt: '' }),
+      'preview',
+    )
+    // `payment` é recriado a cada render; as dependências reais são os campos dele.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    amountCents,
+    clientName,
+    saleDate,
+    model,
+    product,
+    mrrCents,
+    setupCents,
+    months,
+    hasRecurrence,
+    payPlan,
+    downPaymentCents,
+    downPaymentDate,
+    firstDueDate,
+    installments,
+    oneOffCents,
+    session?.workspaceId,
+  ])
+
+  const receiveAccount = receiveAccountId === NONE ? accounts[0]?.id : receiveAccountId
 
   const commissionBase = setupCents + mrrCents
   const commissionCents =
@@ -213,6 +354,18 @@ export function SaleDialog({
   const roas = adsCents ? amountCents / adsCents : null
   const acquisitionCents = adsCents + commissionCents + travelCents
   const paybackMonths = mrrCents ? acquisitionCents / mrrCents : null
+
+  /**
+   * Com entrada, o restante começa um mês depois dela — o padrão de quase todo
+   * contrato. Só ajusta quando a data do restante ainda não passou da entrada,
+   * para não desfazer uma data que a pessoa já escolheu.
+   */
+  function choosePayPlan(plan: PayPlan) {
+    setPayPlan(plan)
+    if (plan === 'entry' && firstDueDate <= downPaymentDate) {
+      setFirstDueDate(toIsoDate(addMonths(fromIsoDate(downPaymentDate), 1)))
+    }
+  }
 
   function handleClientChange(value: string) {
     setClientId(value)
@@ -237,6 +390,24 @@ export function SaleDialog({
       toast.error('A venda precisa ter um valor maior que zero.')
       return
     }
+    if (!product) {
+      toast.error('Escolha o produto vendido.')
+      return
+    }
+    if (!hasRecurrence && payPlan === 'entry') {
+      if (downPaymentCents <= 0) {
+        toast.error('Informe o valor da entrada.')
+        return
+      }
+      if (downPaymentCents >= oneOffCents) {
+        toast.error('A entrada cobre o valor todo — escolha "À vista".')
+        return
+      }
+    }
+    if (!isEditing && alreadyReceived && !receiveAccount) {
+      toast.error('Cadastre uma conta em Configurações para registrar o recebimento.')
+      return
+    }
 
     const fields = {
       clientId: clientId === NONE ? null : clientId,
@@ -250,9 +421,10 @@ export function SaleDialog({
       amountCents,
       mrrCents: hasRecurrence ? mrrCents : 0,
       setupCents,
-      contractMonths: hasRecurrence ? months : null,
+      contractMonths: months,
       paymentMethod: (paymentMethod || null) as PaymentMethod | null,
-      installments: Math.max(1, installments),
+      product: product || null,
+      ...payment,
       closerCommissionPercent: closerCommission,
       sdrCommissionPercent: sdrCommission,
       status,
@@ -282,7 +454,7 @@ export function SaleDialog({
           patch: fields,
           costs,
           regenerateReceivables: generateReceivables,
-          firstDueDate: saleDate,
+          firstDueDate: payment.firstDueDate,
         })
 
         toast.success(
@@ -302,12 +474,46 @@ export function SaleDialog({
         },
         costs,
         generateReceivables,
-        firstDueDate: saleDate,
+        firstDueDate: payment.firstDueDate,
       })
+
+      // O 1º recebimento já caiu: baixa o título pela MESMA operação do botão
+      // "Registrar recebimento" — vira entrada no caixa com o rastro de sempre.
+      // Entrada/à vista no TCV; 1ª mensalidade no MRR.
+      let received = false
+      if (alreadyReceived && receiveAccount && result.bills.length) {
+        const first = hasRecurrence
+          ? result.bills.find((bill) => bill.installmentNumber === 1)
+          : (result.bills.find((bill) => bill.description.startsWith('Entrada')) ??
+            result.bills.find((bill) => bill.description.endsWith('(à vista)')) ??
+            [...result.bills].sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0])
+        if (first) {
+          try {
+            await settleBill.mutateAsync({
+              billId: first.id,
+              amountCents: first.amountCents,
+              // Recebido hoje se o vencimento ainda não chegou; senão, no vencimento.
+              date: first.dueDate > today() ? today() : first.dueDate,
+              accountId: receiveAccount,
+              actorId: session.user.id,
+              notes: 'Recebido no cadastro da venda.',
+            })
+            received = true
+          } catch (cause) {
+            toast.error(
+              `Venda salva, mas o recebimento não foi registrado: ${
+                cause instanceof Error ? cause.message : 'erro desconhecido'
+              }. Registre em "A receber".`,
+            )
+          }
+        }
+      }
 
       toast.success(
         result.bills.length
-          ? `Venda registrada — ${result.bills.length} títulos a receber gerados.`
+          ? `Venda registrada — ${result.bills.length} títulos a receber gerados${
+              received ? ', o 1º já recebido' : ''
+            }.`
           : 'Venda registrada.',
       )
       onOpenChange(false)
@@ -328,7 +534,8 @@ export function SaleDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={submit}>
+        {/* min-w-0: sem ele, um texto que não quebra (o cronograma) alarga o diálogo inteiro. */}
+        <form onSubmit={submit} className="min-w-0">
           <Tabs defaultValue="deal">
             <TabsList className="w-full">
               <TabsTrigger value="deal" className="flex-1">
@@ -381,7 +588,251 @@ export function SaleDialog({
                   <Label htmlFor="sale-date">Data da venda</Label>
                   <DateField id="sale-date" value={saleDate} onChange={setSaleDate} />
                 </div>
+              </div>
 
+              <Separator />
+
+              {/* Produto e modalidade: o que foi vendido e como ele é cobrado. */}
+              <section className="space-y-3">
+                <h3 className="text-sm font-medium">Produto e modalidade</h3>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label>Produto</Label>
+                    <ChoiceGroup
+                      value={product}
+                      onChange={(value) => setProduct(value as SaleProduct)}
+                      options={optionsFrom(SALE_PRODUCT_LABEL)}
+                      ariaLabel="Produto"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Modalidade</Label>
+                    <ChoiceGroup
+                      value={model === 'mrr' ? 'mrr' : 'tcv'}
+                      onChange={(value) =>
+                        // Venda antiga com outro modelo (projeto, consultoria…) mantém o
+                        // dela enquanto continuar não recorrente.
+                        setModel(
+                          value === 'mrr'
+                            ? 'mrr'
+                            : sale && sale.model !== 'mrr'
+                              ? sale.model
+                              : 'tcv',
+                        )
+                      }
+                      options={[
+                        { value: 'tcv', label: 'TCV' },
+                        { value: 'mrr', label: 'MRR' },
+                      ]}
+                      ariaLabel="Modalidade"
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      {hasRecurrence
+                        ? 'MRR: mensalidade cobrada todo mês, por um número de meses.'
+                        : 'TCV: valor total do projeto, à vista ou com entrada + restante.'}
+                    </p>
+                  </div>
+                </div>
+              </section>
+
+              {/* Pagamento: vira o cronograma de "A receber" logo abaixo. */}
+              <section className="space-y-3">
+                <h3 className="text-sm font-medium">Pagamento</h3>
+
+                {hasRecurrence ? (
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="sale-mrr">Valor da mensalidade</Label>
+                      <MoneyInput id="sale-mrr" value={mrrCents} onChange={setMrrCents} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="sale-months">Quantos meses</Label>
+                      <Input
+                        id="sale-months"
+                        type="number"
+                        min={1}
+                        value={contractMonths}
+                        onChange={(event) => setContractMonths(Number(event.target.value))}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="sale-first-due">1º pagamento</Label>
+                      <DateField
+                        id="sale-first-due"
+                        value={firstDueDate}
+                        onChange={setFirstDueDate}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="sale-setup">Implantação (opcional)</Label>
+                      <MoneyInput id="sale-setup" value={setupCents} onChange={setSetupCents} />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="sale-oneoff">Valor total do projeto</Label>
+                        <MoneyInput
+                          id="sale-oneoff"
+                          value={oneOffCents}
+                          onChange={setOneOffCents}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="sale-months">Meses do projeto</Label>
+                        <Input
+                          id="sale-months"
+                          type="number"
+                          min={1}
+                          value={contractMonths}
+                          onChange={(event) => setContractMonths(Number(event.target.value))}
+                        />
+                      </div>
+                      {/* Só aparece em venda antiga que tinha implantação separada. */}
+                      {setupCents > 0 && (
+                        <div className="space-y-1.5">
+                          <Label htmlFor="sale-setup">Implantação</Label>
+                          <MoneyInput id="sale-setup" value={setupCents} onChange={setSetupCents} />
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label>Como foi pago</Label>
+                      <ChoiceGroup
+                        value={payPlan}
+                        onChange={(value) => choosePayPlan(value as PayPlan)}
+                        options={optionsFrom(PAY_PLAN_LABEL)}
+                        ariaLabel="Como foi pago"
+                      />
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                      {payPlan === 'full' && (
+                        <div className="space-y-1.5">
+                          <Label htmlFor="sale-pay-date">Data do pagamento</Label>
+                          <DateField
+                            id="sale-pay-date"
+                            value={downPaymentDate}
+                            onChange={setDownPaymentDate}
+                          />
+                        </div>
+                      )}
+
+                      {payPlan === 'entry' && (
+                        <>
+                          <div className="space-y-1.5">
+                            <Label htmlFor="sale-down">Valor da entrada</Label>
+                            <MoneyInput
+                              id="sale-down"
+                              value={downPaymentCents}
+                              onChange={setDownPaymentCents}
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label htmlFor="sale-down-date">Data da entrada</Label>
+                            <DateField
+                              id="sale-down-date"
+                              value={downPaymentDate}
+                              onChange={setDownPaymentDate}
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label>Valor restante</Label>
+                            <Input
+                              value={formatMoney(balanceCents)}
+                              readOnly
+                              className="tabular-nums"
+                            />
+                          </div>
+                        </>
+                      )}
+
+                      {payPlan !== 'full' && (
+                        <>
+                          <div className="space-y-1.5">
+                            <Label htmlFor="sale-installments">
+                              {payPlan === 'entry' ? 'Restante em quantas vezes' : 'Parcelas'}
+                            </Label>
+                            <Input
+                              id="sale-installments"
+                              type="number"
+                              min={1}
+                              value={installments}
+                              onChange={(event) => setInstallments(Number(event.target.value))}
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label htmlFor="sale-first-due">
+                              {payPlan === 'entry'
+                                ? installments > 1
+                                  ? '1ª parcela do restante'
+                                  : 'Data do restante'
+                                : '1ª parcela'}
+                            </Label>
+                            <DateField
+                              id="sale-first-due"
+                              value={firstDueDate}
+                              onChange={setFirstDueDate}
+                            />
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <Schedule bills={schedule} />
+
+                {!isEditing && generateReceivables && schedule.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-3 rounded-md border border-border p-3">
+                    <label className="flex flex-1 items-start gap-2.5">
+                      <Checkbox
+                        checked={alreadyReceived}
+                        onCheckedChange={(checked) => setAlreadyReceived(checked === true)}
+                        className="mt-0.5"
+                      />
+                      <span>
+                        <span className="block text-sm font-medium">
+                          {hasRecurrence
+                            ? '1ª mensalidade já recebida'
+                            : payPlan === 'full'
+                              ? 'Pagamento já recebido'
+                              : payPlan === 'entry'
+                                ? 'Entrada já recebida'
+                                : '1ª parcela já recebida'}
+                        </span>
+                        <span className="block text-xs text-muted-foreground">
+                          Dá baixa no título e lança a entrada em Entradas e saídas.
+                        </span>
+                      </span>
+                    </label>
+                    {alreadyReceived && (
+                      <Select value={receiveAccount ?? NONE} onValueChange={setReceiveAccountId}>
+                        <SelectTrigger
+                          className="w-full sm:w-[200px]"
+                          aria-label="Conta que recebeu"
+                        >
+                          <SelectValue placeholder="Conta" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {accounts.map((account) => (
+                            <SelectItem key={account.id} value={account.id}>
+                              {account.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
+                )}
+              </section>
+
+              <Separator />
+              <h3 className="text-sm font-medium">Comercial</h3>
+
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <div className="space-y-1.5">
                   <Label>Closer</Label>
                   <Select value={closerId} onValueChange={setCloserId}>
@@ -448,70 +899,6 @@ export function SaleDialog({
                     Permite medir os dias até fechar.
                   </p>
                 </div>
-              </div>
-
-              <Separator />
-
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <div className="space-y-1.5">
-                  <Label>Modelo</Label>
-                  <Select value={model} onValueChange={(value) => setModel(value as SaleModel)}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {optionsFrom(SALE_MODEL_LABEL).map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {hasRecurrence && (
-                  <>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="sale-mrr">Mensalidade (MRR)</Label>
-                      <MoneyInput id="sale-mrr" value={mrrCents} onChange={setMrrCents} />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="sale-months">Meses de contrato</Label>
-                      <Input
-                        id="sale-months"
-                        type="number"
-                        min={1}
-                        value={contractMonths}
-                        onChange={(event) => setContractMonths(Number(event.target.value))}
-                      />
-                    </div>
-                  </>
-                )}
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="sale-setup">Implantação / setup</Label>
-                  <MoneyInput id="sale-setup" value={setupCents} onChange={setSetupCents} />
-                </div>
-
-                {!hasRecurrence && (
-                  <>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="sale-oneoff">Valor do projeto</Label>
-                      <MoneyInput id="sale-oneoff" value={oneOffCents} onChange={setOneOffCents} />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="sale-installments">Parcelas</Label>
-                      <Input
-                        id="sale-installments"
-                        type="number"
-                        min={1}
-                        value={installments}
-                        onChange={(event) => setInstallments(Number(event.target.value))}
-                      />
-                    </div>
-                  </>
-                )}
-
                 <div className="space-y-1.5">
                   <Label>Forma de pagamento</Label>
                   <Select
@@ -592,10 +979,8 @@ export function SaleDialog({
                     {isEditing ? 'Refazer os títulos a receber' : 'Gerar títulos a receber'}
                   </span>
                   <span className="block text-xs text-muted-foreground">
-                    {hasRecurrence
-                      ? `${setupCents > 0 ? '1 título de implantação + ' : ''}${months} mensalidades`
-                      : `${Math.max(1, installments)} ${installments > 1 ? 'parcelas' : 'parcela'}`}
-                    , a partir de {saleDate.split('-').reverse().join('/')}.
+                    {schedule.length} {schedule.length === 1 ? 'título' : 'títulos'}, conforme o
+                    cronograma acima.
                   </span>
                   {isEditing && (
                     <span className="mt-1 block text-xs text-negative">
@@ -729,6 +1114,89 @@ function Metric({
       >
         {value}
       </p>
+    </div>
+  )
+}
+
+/**
+ * Escolha única em botões lado a lado — produto, modalidade, forma de
+ * pagamento. Com 2–3 opções, ver todas de uma vez é mais rápido que abrir um
+ * select, e a escolha atual fica visível sem clicar.
+ */
+function ChoiceGroup({
+  value,
+  onChange,
+  options,
+  ariaLabel,
+}: {
+  value: string
+  onChange: (value: string) => void
+  options: { value: string; label: string }[]
+  ariaLabel: string
+}) {
+  return (
+    <div role="radiogroup" aria-label={ariaLabel} className="flex flex-wrap gap-2">
+      {options.map((option) => {
+        const selected = option.value === value
+        return (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            onClick={() => onChange(option.value)}
+            className={
+              'rounded-md border px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ' +
+              (selected
+                ? 'border-primary bg-primary text-primary-foreground'
+                : 'border-border bg-card hover:bg-muted')
+            }
+          >
+            {option.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/** Cronograma que vai para "A receber" — calculado pela mesma regra que salva. */
+function Schedule({
+  bills,
+}: {
+  bills: { id: string; dueDate: string; description: string; amountCents: number }[]
+}) {
+  if (!bills.length) return null
+  const total = bills.reduce((sum, bill) => sum + bill.amountCents, 0)
+  const visible = bills.length > 6 ? [...bills.slice(0, 5), null, bills[bills.length - 1]!] : bills
+  return (
+    <div className="min-w-0 overflow-hidden rounded-md border border-border bg-surface-1 p-3">
+      <p className="mb-2 text-xs font-medium text-muted-foreground">
+        Vai para "A receber" ({bills.length} {bills.length === 1 ? 'título' : 'títulos'})
+      </p>
+      <ul className="space-y-1 text-sm">
+        {visible.map((bill, index) =>
+          bill ? (
+            <li key={bill.id} className="flex items-baseline gap-3">
+              <span className="w-[84px] shrink-0 tabular-nums text-muted-foreground">
+                {formatDate(bill.dueDate)}
+              </span>
+              <span className="min-w-0 flex-1 truncate">{bill.description}</span>
+              <span className="shrink-0 font-medium tabular-nums">
+                {formatMoney(bill.amountCents)}
+              </span>
+            </li>
+          ) : (
+            <li key={`gap-${index}`} className="pl-[96px] text-xs text-muted-foreground">
+              … mais {bills.length - 6} {bills.length - 6 === 1 ? 'título' : 'títulos'}
+            </li>
+          ),
+        )}
+      </ul>
+      <div className="mt-2 flex justify-between border-t border-border pt-2 text-sm">
+        <span className="text-muted-foreground">Total</span>
+        <span className="font-semibold tabular-nums">{formatMoney(total)}</span>
+      </div>
     </div>
   )
 }

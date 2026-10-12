@@ -3,7 +3,12 @@ import { toast } from 'sonner'
 import { Handshake, MoreHorizontal, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import { formatDate } from '@/lib/date'
 import { formatMoney, formatMultiple, formatNumber, formatPercent } from '@/lib/money'
-import { LEAD_SOURCE_LABEL, SALE_MODEL_LABEL, SALE_STATUS_LABEL } from '@/data/enums'
+import {
+  LEAD_SOURCE_LABEL,
+  SALE_MODEL_LABEL,
+  SALE_PRODUCT_LABEL,
+  SALE_STATUS_LABEL,
+} from '@/data/enums'
 import type { Profile, Sale, SaleStatus } from '@/data/types'
 import { cn } from '@/lib/cn'
 import {
@@ -128,10 +133,16 @@ function buildColumns(profileMap: Map<string, Profile>): SaleColumn[] {
     },
     {
       id: 'model',
-      label: 'Modelo',
+      label: 'Produto',
       headClassName: 'hidden sm:table-cell',
       cellClassName: 'hidden sm:table-cell',
-      render: (sale) => <Badge variant="muted">{SALE_MODEL_LABEL[sale.model]}</Badge>,
+      // Mesmo id de coluna de antes (a personalização guarda quais colunas aparecem).
+      render: (sale) => (
+        <span className="flex flex-wrap gap-1">
+          {sale.product && <Badge variant="outline">{SALE_PRODUCT_LABEL[sale.product]}</Badge>}
+          <Badge variant="muted">{SALE_MODEL_LABEL[sale.model]}</Badge>
+        </span>
+      ),
     },
     {
       id: 'amount',

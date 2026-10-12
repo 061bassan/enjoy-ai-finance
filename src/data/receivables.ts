@@ -1,6 +1,7 @@
 import { addMonths, fromIsoDate, toIsoDate, type IsoDate } from '@/lib/date'
 import { splitCents } from '@/lib/money'
 import type { NewEntity } from './contracts'
+import { SALE_MODEL_LABEL, SALE_PRODUCT_LABEL } from './enums'
 import type { Bill, Sale } from './types'
 
 /**
@@ -22,8 +23,14 @@ import type { Bill, Sale } from './types'
  * O modelo comercial que ela materializa:
  * - `setupCents` vira um título único no primeiro vencimento;
  * - `mrrCents` vira um título por mês de contrato;
- * - modelos sem recorrência dividem o total no número de parcelas, com
- *   `splitCents` para não perder nem inventar centavo no arredondamento.
+ * - modelos sem recorrência (TCV) dividem o total no número de parcelas, com
+ *   `splitCents` para não perder nem inventar centavo no arredondamento. Com
+ *   entrada (`downPaymentCents`), ela vira um título próprio na data da
+ *   entrada e só o RESTANTE é parcelado.
+ *
+ * O 1º vencimento é o que a venda guarda (`firstDueDate`); na falta dele, o
+ * que veio por parâmetro; na falta dos dois, a data da venda — que é o que
+ * toda venda anterior a esse campo usava.
  */
 export function buildReceivables(
   sale: Sale,
@@ -31,8 +38,9 @@ export function buildReceivables(
   stamp: (draft: NewEntity<Bill>) => Bill,
   groupId: string,
 ): Bill[] {
-  const firstDue = firstDueDate ?? sale.saleDate
+  const firstDue = sale.firstDueDate ?? firstDueDate ?? sale.saleDate
   const drafts: NewEntity<Bill>[] = []
+  const what = sale.product ? SALE_PRODUCT_LABEL[sale.product] : SALE_MODEL_LABEL[sale.model]
 
   const base = {
     workspaceId: sale.workspaceId,
@@ -76,21 +84,41 @@ export function buildReceivables(
   // Modelos sem recorrência: o valor do contrato menos o que já virou setup.
   const oneOffTotal = sale.mrrCents > 0 ? 0 : sale.amountCents - sale.setupCents
   if (oneOffTotal > 0) {
-    const parts = Math.max(1, sale.installments || 1)
-    const amounts = splitCents(oneOffTotal, parts)
-    amounts.forEach((amount, i) => {
+    // Entrada nunca passa do total: entrada = total é o pagamento à vista.
+    const downPayment = Math.min(Math.max(0, sale.downPaymentCents ?? 0), oneOffTotal)
+    if (downPayment > 0) {
       drafts.push({
         ...base,
         description:
-          parts > 1
-            ? `${sale.clientName} — parcela ${i + 1}/${parts}`
-            : `${sale.clientName} — ${sale.model}`,
-        amountCents: amount,
-        dueDate: toIsoDate(addMonths(fromIsoDate(firstDue), i)),
-        installmentNumber: parts > 1 ? i + 1 : null,
-        installmentTotal: parts > 1 ? parts : null,
+          downPayment === oneOffTotal
+            ? `${what} — ${sale.clientName} (à vista)`
+            : `Entrada — ${what} — ${sale.clientName}`,
+        amountCents: downPayment,
+        dueDate: sale.downPaymentDate ?? sale.saleDate,
+        installmentNumber: null,
+        installmentTotal: null,
       })
-    })
+    }
+
+    const balance = oneOffTotal - downPayment
+    if (balance > 0) {
+      const parts = Math.max(1, sale.installments || 1)
+      const amounts = splitCents(balance, parts)
+      const label = downPayment > 0 ? `Restante — ${what}` : what
+      amounts.forEach((amount, i) => {
+        drafts.push({
+          ...base,
+          description:
+            parts > 1
+              ? `${label} — ${sale.clientName} — parcela ${i + 1}/${parts}`
+              : `${label} — ${sale.clientName}`,
+          amountCents: amount,
+          dueDate: toIsoDate(addMonths(fromIsoDate(firstDue), i)),
+          installmentNumber: parts > 1 ? i + 1 : null,
+          installmentTotal: parts > 1 ? parts : null,
+        })
+      })
+    }
   }
 
   return drafts.map((draft) => stamp(draft))

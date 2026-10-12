@@ -148,7 +148,7 @@ export const SCREENS: CustomizableScreen[] = [
           { id: 'client', label: 'Cliente', locked: true, hint: 'Sem ele a linha não identifica ninguém.' },
           { id: 'closer', label: 'Closer' },
           { id: 'source', label: 'Origem' },
-          { id: 'model', label: 'Modelo' },
+          { id: 'model', label: 'Produto e modalidade' },
           { id: 'amount', label: 'Valor', locked: true, hint: 'É o número que a tela existe para mostrar.' },
           { id: 'mrr', label: 'MRR' },
           { id: 'margin', label: 'Margem' },
