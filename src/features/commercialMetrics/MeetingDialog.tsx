@@ -27,6 +27,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useCreate, useUpdate } from '@/hooks/data'
+import { LabelEditor } from '@/components/LabelEditor'
 
 const AUTO = '__auto__'
 const NONE = '__none__'
@@ -172,7 +173,10 @@ export function MeetingDialog({
             </div>
 
             <div className="space-y-1.5">
-              <Label>Status</Label>
+              <span className="flex items-center gap-1">
+                <Label>Status</Label>
+                <LabelEditor group="meetingStatus" />
+              </span>
               <Select value={status} onValueChange={(value) => setStatus(value as MeetingStatus)}>
                 <SelectTrigger>
                   <SelectValue />
@@ -187,7 +191,10 @@ export function MeetingDialog({
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Produto</Label>
+              <span className="flex items-center gap-1">
+                <Label>Produto</Label>
+                <LabelEditor group="saleProduct" />
+              </span>
               <Select value={product} onValueChange={(value) => setProduct(value as SaleProduct)}>
                 <SelectTrigger>
                   <SelectValue />

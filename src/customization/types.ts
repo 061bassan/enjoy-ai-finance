@@ -15,6 +15,7 @@
  *    a hierarquia visual e o contraste. Aqui só há presets validados.
  */
 
+import type { LabelOverrides } from '@/data/enums'
 import type { ScopedEntity } from '@/data/types'
 
 /** Acentos disponíveis. O valor é o matiz HSL; a saturação vem da intensidade. */
@@ -57,6 +58,11 @@ export interface Customization extends ScopedEntity {
   brand: BrandPrefs
   /** Chave: `${screenId}.${sectionId}` → ids ocultos. */
   hidden: HiddenMap
+  /**
+   * Etiquetas renomeadas pelo time ("Perdida" → "Desistente"). Opcional: linha
+   * antiga, sem a coluna, vale como "tudo no padrão".
+   */
+  labels?: LabelOverrides
   /** Rotas removidas do menu lateral. */
   hiddenNav: string[]
 }

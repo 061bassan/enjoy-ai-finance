@@ -47,6 +47,7 @@ import {
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { LabelEditor } from '@/components/LabelEditor'
 
 const NONE = '__none__'
 
@@ -602,7 +603,10 @@ export function SaleDialog({
                 <h3 className="text-sm font-medium">Produto e modalidade</h3>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-1.5">
-                    <Label>Produto</Label>
+                    <span className="flex items-center gap-1">
+                      <Label>Produto</Label>
+                      <LabelEditor group="saleProduct" />
+                    </span>
                     <ChoiceGroup
                       value={product}
                       onChange={(value) => setProduct(value as SaleProduct)}
@@ -873,7 +877,10 @@ export function SaleDialog({
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label>Origem do lead</Label>
+                  <span className="flex items-center gap-1">
+                    <Label>Origem do lead</Label>
+                    <LabelEditor group="leadSource" />
+                  </span>
                   <Select
                     value={leadSource}
                     onValueChange={(value) => setLeadSource(value as LeadSource)}
@@ -948,7 +955,10 @@ export function SaleDialog({
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label>Status</Label>
+                  <span className="flex items-center gap-1">
+                    <Label>Status</Label>
+                    <LabelEditor group="saleStatus" />
+                  </span>
                   <Select value={status} onValueChange={(value) => setStatus(value as SaleStatus)}>
                     <SelectTrigger>
                       <SelectValue />

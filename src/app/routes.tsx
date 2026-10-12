@@ -5,6 +5,7 @@ import { LoginPage } from '@/features/auth/LoginPage'
 import { PendingAccessPage } from '@/features/auth/PendingAccessPage'
 import { RecoveryPage } from '@/features/auth/RecoveryPage'
 import { AppShell } from './AppShell'
+import { useCustomization } from '@/customization/context'
 import { permissionForPath } from './navigation'
 import { useSession } from './session'
 
@@ -135,6 +136,10 @@ function RequirePermission({ children }: { children: ReactNode }) {
 }
 
 export function AppRoutes() {
+  // Assina as etiquetas renomeadas: ao trocar uma, as rotas são recriadas e a
+  // tela aberta re-renderiza já com o nome novo (os mapas de etiqueta são
+  // sobrescritos no lugar pelo CustomizationProvider).
+  useCustomization()
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />

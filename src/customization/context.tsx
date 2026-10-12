@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { data } from '@/data'
+import { applyLabelOverrides, type LabelGroup, type LabelOverrides } from '@/data/enums'
 import { useSession } from '@/app/session'
 import { useTheme } from '@/app/theme'
 import { defaultHidden, sectionKey } from './registry'
@@ -24,6 +25,11 @@ interface CustomizationContextValue {
   toggleItem: (screenId: string, sectionId: string, itemId: string, visible: boolean) => void
   toggleNav: (to: string, hidden: boolean) => void
   resetAll: () => void
+  /** Etiquetas renomeadas pelo time. Muda de identidade a cada troca — quem
+   *  mostra etiqueta e depende disso para re-renderizar lê este campo. */
+  labels: LabelOverrides
+  /** Renomeia uma etiqueta; `null` (ou texto vazio) volta ao padrão. */
+  setLabel: (group: LabelGroup, value: string, text: string | null) => void
   /** Falso enquanto a preferência ainda não chegou do banco. */
   ready: boolean
   saving: boolean
@@ -64,6 +70,7 @@ export function CustomizationProvider({ children }: { children: React.ReactNode 
         brand: DEFAULT_BRAND,
         hidden: {},
         hiddenNav: [],
+        labels: {},
         ...patch,
       } as Omit<Customization, 'id' | 'createdAt' | 'updatedAt'>)
     },
@@ -111,6 +118,24 @@ export function CustomizationProvider({ children }: { children: React.ReactNode 
 
   const isNavHidden = React.useCallback((to: string) => hiddenNav.includes(to), [hiddenNav])
 
+  const labels = React.useMemo<LabelOverrides>(() => row?.labels ?? {}, [row?.labels])
+  // Aplicado DURANTE o render, não num efeito: as telas filhas leem os mapas
+  // de etiqueta no mesmo render em que o valor do contexto muda. Num efeito,
+  // elas pintariam uma vez com o texto antigo. É idempotente, então rodar de
+  // novo no mesmo render não muda nada.
+  React.useMemo(() => applyLabelOverrides(labels), [labels])
+
+  const setLabel = React.useCallback(
+    (group: LabelGroup, value: string, text: string | null) => {
+      const groupLabels = { ...(labels[group] ?? {}) }
+      const cleaned = text?.trim()
+      if (cleaned) groupLabels[value] = cleaned
+      else delete groupLabels[value]
+      save.mutate({ labels: { ...labels, [group]: groupLabels } })
+    },
+    [labels, save],
+  )
+
   const setBrand = React.useCallback(
     (patch: Partial<BrandPrefs>) => {
       save.mutate({ brand: { ...brand, ...patch } })
@@ -157,6 +182,8 @@ export function CustomizationProvider({ children }: { children: React.ReactNode 
       toggleItem,
       toggleNav,
       resetAll,
+      labels,
+      setLabel,
       ready: workspaceId == null || !isPending,
       saving: save.isPending,
     }),
@@ -168,6 +195,8 @@ export function CustomizationProvider({ children }: { children: React.ReactNode 
       toggleItem,
       toggleNav,
       resetAll,
+      labels,
+      setLabel,
       workspaceId,
       isPending,
       save.isPending,
