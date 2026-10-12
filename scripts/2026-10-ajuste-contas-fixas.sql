@@ -78,7 +78,8 @@ begin
     ('Claude Pro(pagamento de outubro cartão martercard itaú) (Cartão João - Bradesco)', '2026-10-10', null),
     ('Dropbox (Cartão Diogo - Inter)', '2026-10-10', null),
     ('Energia', '2026-10-10', null),
-    ('InLead (Cartão Diogo - Inter)', '2026-10-10', null),
+    -- O nome no banco tem DOIS espaços depois de "InLead".
+    ('InLead  (Cartão Diogo - Inter)', '2026-10-10', null),
     ('Internet', '2026-10-10', null),
     ('IPTU (Escritório)', '2026-09-10', null),
     ('Pagamento MEI´s', '2026-10-07', null),
