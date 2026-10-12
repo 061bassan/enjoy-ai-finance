@@ -37,13 +37,27 @@ export function saleCostTotal(cost: SaleCost | undefined): Cents {
   )
 }
 
+/**
+ * Sobre o que a comissão incide.
+ *
+ * Recorrente (MRR): implantação + 1ª mensalidade — o que entra no fechamento,
+ * não o contrato inteiro, que depende de o cliente ficar. Sem recorrência
+ * (TCV, projeto): o valor total do projeto. Antes a mesma conta do MRR valia
+ * para os dois, e um TCV saía com comissão zero.
+ *
+ * O formulário de venda e a tabela de vendas usam esta função — uma regra só.
+ */
+export function commissionBase(sale: Pick<Sale, 'mrrCents' | 'setupCents' | 'amountCents'>): Cents {
+  return sale.mrrCents > 0 ? sale.setupCents + sale.mrrCents : sale.amountCents
+}
+
 /** Comissão do closer em centavos, a partir do percentual da venda. */
 export function closerCommission(sale: Sale): Cents {
-  return percentOf(sale.setupCents + sale.mrrCents, sale.closerCommissionPercent)
+  return percentOf(commissionBase(sale), sale.closerCommissionPercent)
 }
 
 export function sdrCommission(sale: Sale): Cents {
-  return percentOf(sale.setupCents + sale.mrrCents, sale.sdrCommissionPercent)
+  return percentOf(commissionBase(sale), sale.sdrCommissionPercent)
 }
 
 export interface SaleEconomics {
@@ -251,7 +265,9 @@ export function performanceBySeller(
 }
 
 /** Receita agrupada por origem do lead — mostra qual canal paga a conta. */
-export function revenueBySource(sales: readonly Sale[]): { source: string; totalCents: Cents; count: number }[] {
+export function revenueBySource(
+  sales: readonly Sale[],
+): { source: string; totalCents: Cents; count: number }[] {
   const buckets = new Map<string, { total: Cents; count: number }>()
 
   for (const sale of activeSales(sales)) {

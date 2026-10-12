@@ -340,3 +340,46 @@ describe('excluir lançamento', () => {
     expect(await db.transactions.get(transaction.id)).toBeDefined()
   })
 })
+
+describe('venda TCV com entrada', () => {
+  it('gera entrada + restante em "A receber" e a entrada recebida vira entrada no caixa', async () => {
+    const { bills } = await ops.createSaleWithReceivables({
+      sale: vendaBase({
+        model: 'tcv',
+        product: 'enjoy_rec',
+        amountCents: 1_200_000,
+        mrrCents: 0,
+        setupCents: 0,
+        contractMonths: 6,
+        installments: 2,
+        downPaymentCents: 400_000,
+        downPaymentDate: '2026-08-15',
+        firstDueDate: '2026-09-15',
+      }),
+      generateReceivables: true,
+      firstDueDate: '2026-09-15',
+    })
+
+    expect(bills.map((b) => [b.dueDate, b.amountCents])).toEqual([
+      ['2026-08-15', 400_000],
+      ['2026-09-15', 400_000],
+      ['2026-10-15', 400_000],
+    ])
+
+    const entrada = primeiro(bills)
+    const { transaction } = await ops.settleBill({
+      billId: entrada.id,
+      amountCents: entrada.amountCents,
+      date: '2026-08-15',
+      accountId: 'conta_teste',
+      actorId: ATOR,
+    })
+    expect(transaction.kind).toBe('income')
+    expect(transaction.amountCents).toBe(400_000)
+
+    // A venda guarda produto e plano: refazer os títulos reproduz o mesmo cronograma.
+    const venda = await db.sales.get(entrada.saleId as string)
+    expect(venda?.product).toBe('enjoy_rec')
+    expect(venda?.downPaymentCents).toBe(400_000)
+  })
+})

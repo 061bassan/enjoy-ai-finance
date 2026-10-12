@@ -469,6 +469,9 @@ export interface LeadActivity extends ScopedEntity {
 
 export type SaleModel = 'mrr' | 'setup' | 'projeto' | 'consultoria' | 'servico' | 'tcv'
 
+/** Produtos da Enjoy. O valor de cada venda é negociado — o produto não tem preço fixo. */
+export type SaleProduct = 'enjoy_pro' | 'enjoy_growth' | 'enjoy_rec'
+
 export type LeadSource =
   | 'inbound'
   | 'outbound'
@@ -520,6 +523,21 @@ export interface Sale extends ScopedEntity {
    */
   leadId?: Id | null
   notes?: string | null
+  /** Produto vendido. Vendas antigas não têm. */
+  product?: SaleProduct | null
+  /**
+   * Entrada do TCV (0/nulo = sem entrada). O restante — `amountCents` menos a
+   * entrada — é dividido em `installments` parcelas mensais a partir de
+   * `firstDueDate`.
+   */
+  downPaymentCents?: Cents | null
+  /** Quando a entrada é paga. Nulo = na data da venda. */
+  downPaymentDate?: IsoDate | null
+  /**
+   * 1º vencimento: a 1ª mensalidade (MRR) ou a 1ª parcela do restante (TCV).
+   * Nulo = data da venda — o comportamento de antes desta coluna existir.
+   */
+  firstDueDate?: IsoDate | null
   createdBy: Id
 }
 
