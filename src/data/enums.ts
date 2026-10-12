@@ -119,6 +119,8 @@ export const MEETING_STATUS_LABEL: Record<MeetingStatus, string> = {
 }
 
 export const SALE_PRODUCT_LABEL: Record<SaleProduct, string> = {
+  enjoy_start: 'Enjoy Start',
+  // Antigo "PEAP".
   enjoy_pro: 'Enjoy Pro',
   enjoy_growth: 'Enjoy Growth',
   enjoy_rec: 'Enjoy Rec',
