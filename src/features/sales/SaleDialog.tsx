@@ -23,6 +23,7 @@ import type {
 import { useSession } from '@/app/session'
 import { useAccounts, useCreateSale, useSettleBill, useUpdateSale } from '@/hooks/data'
 import { buildReceivables } from '@/data/receivables'
+import { commissionBase } from '@/domain/sales'
 import { DateField } from '@/components/DateField'
 import { MoneyInput } from '@/components/MoneyInput'
 import { Button } from '@/components/ui/button'
@@ -334,9 +335,13 @@ export function SaleDialog({
 
   const receiveAccount = receiveAccountId === NONE ? accounts[0]?.id : receiveAccountId
 
-  const commissionBase = setupCents + mrrCents
+  const commissionBaseCents = commissionBase({
+    mrrCents: hasRecurrence ? mrrCents : 0,
+    setupCents,
+    amountCents,
+  })
   const commissionCents =
-    percentOf(commissionBase, closerCommission) + percentOf(commissionBase, sdrCommission)
+    percentOf(commissionBaseCents, closerCommission) + percentOf(commissionBaseCents, sdrCommission)
 
   const totalCostCents =
     adsCents +
