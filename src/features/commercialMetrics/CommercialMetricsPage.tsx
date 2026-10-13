@@ -22,7 +22,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { data } from '@/data'
-import { MEETING_STATUS_LABEL, SALE_PRODUCT_LABEL } from '@/data/enums'
+import { LEAD_SOURCE_LABEL, MEETING_STATUS_LABEL, SALE_PRODUCT_LABEL } from '@/data/enums'
 import type { CommercialMeeting, MeetingStatus, Sale } from '@/data/types'
 import {
   formatDate,
@@ -36,6 +36,7 @@ import {
 import { formatMoney, formatMoneyCompact, formatNumber, formatPercent } from '@/lib/money'
 import {
   activeMonths,
+  isPaidTraffic,
   commercialMetrics,
   matchMeetingsToSales,
   meetingBreakdown,
@@ -343,10 +344,21 @@ export function CommercialMetricsPage() {
           </div>
 
           {monthMeetings.length > 0 ? (
-            <div className="grid gap-4 xl:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <BreakdownCard
-                title="Por criativo"
-                rows={meetingBreakdown(monthMeetings, matches, (m) => m.creative)}
+                title="Por origem"
+                rows={meetingBreakdown(monthMeetings, matches, (m) =>
+                  m.source ? LEAD_SOURCE_LABEL[m.source] : LEAD_SOURCE_LABEL.trafego_pago,
+                )}
+              />
+              {/* Criativo é coisa de anúncio: só as reuniões do tráfego entram aqui. */}
+              <BreakdownCard
+                title="Por criativo (tráfego)"
+                rows={meetingBreakdown(
+                  monthMeetings.filter(isPaidTraffic),
+                  matches,
+                  (m) => m.creative,
+                )}
               />
               <BreakdownCard
                 title="Por quem fez a call"
@@ -400,7 +412,7 @@ export function CommercialMetricsPage() {
                     </TableHead>
                     <TableHead className="hidden md:table-cell">Proposta</TableHead>
                     <TableHead className="hidden lg:table-cell">Quem fez</TableHead>
-                    <TableHead className="hidden xl:table-cell">Criativo</TableHead>
+                    <TableHead className="hidden xl:table-cell">Origem</TableHead>
                     <TableHead>Venda</TableHead>
                     <TableHead className="w-10" />
                   </TableRow>
@@ -490,7 +502,8 @@ function MetricTiles({
         label="Reuniões"
         value={formatNumber(current.meetings)}
         variation={variation(current.meetings, previous?.meetings)}
-        secondary={`${current.meetingsHeld} realizadas · ${current.noShows} no-show · ${current.meetingsScheduled} a fazer`}
+        secondary={`${current.paidMeetings} do tráfego · ${current.otherMeetings} de indicação/outras · ${current.noShows} no-show`}
+        hint="Todas as origens. As taxas do tráfego (agendamento, custo por reunião, win rate, CAC) usam só as reuniões de tráfego pago."
       />
       <KpiCard
         label="Vendas do funil"
@@ -503,12 +516,13 @@ function MetricTiles({
         label="Win rate (venda ÷ lead)"
         value={pct(current.leadWinRate)}
         variation={variation(current.leadWinRate, previous?.leadWinRate)}
+        hint="Vendas que vieram do tráfego ÷ leads do Marketing. Venda de indicação conta em Vendas do funil, não aqui."
       />
       <KpiCard
         label="Agendamento (reunião ÷ lead)"
         value={pct(current.schedulingRate)}
         variation={variation(current.schedulingRate, previous?.schedulingRate)}
-        hint='É a "win rate reuniões" da planilha.'
+        hint='Reuniões do TRÁFEGO ÷ leads do Marketing — a "win rate reuniões" da planilha. Indicação não entra: não veio desses leads.'
       />
       <KpiCard
         label="Conversão de reunião"
@@ -741,7 +755,8 @@ function MeetingRow({
         {meeting.hostName || '—'}
       </TableCell>
       <TableCell className="hidden max-w-[180px] truncate text-muted-foreground xl:table-cell">
-        {meeting.creative || '—'}
+        {meeting.source ? LEAD_SOURCE_LABEL[meeting.source] : LEAD_SOURCE_LABEL.trafego_pago}
+        {meeting.creative ? ` · ${meeting.creative}` : null}
       </TableCell>
       <TableCell>
         {sale ? (

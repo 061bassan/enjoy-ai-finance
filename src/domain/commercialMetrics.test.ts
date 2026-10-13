@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { CommercialMeeting, MarketingEntry, Sale } from '@/data/types'
 import {
   commercialMetrics,
+  isPaidTraffic,
   matchMeetingsToSales,
   meetingBreakdown,
   withMeetingRegistry,
@@ -270,5 +271,49 @@ describe('withMeetingRegistry', () => {
 
   it('sem reunião registrada no período, vale o diário', () => {
     expect(withMeetingRegistry(diary, [], range)).toBe(diary)
+  })
+})
+
+describe('origem da reunião: tráfego pago × indicação', () => {
+  const range = { from: '2026-09-01', to: '2026-09-30' }
+  const ads = { ...julyAds, month: '2026-09-01', adsCents: 201_325, leads: 45 }
+
+  it('indicação conta como reunião e venda, mas fica fora das taxas do tráfego', () => {
+    const trafego = Array.from({ length: 11 }, (_, i) =>
+      meeting(`2026-09-${String(i + 1).padStart(2, '0')}`, `Lead ${i}`, { source: 'trafego_pago' }),
+    )
+    const spx = meeting('2026-09-22', 'SPX', { source: 'indicacao', status: 'fechada' })
+    const sales = [sale('2026-09-25', 'SPX', 500_000)]
+    const all = [...trafego, spx]
+    const m = commercialMetrics({
+      range,
+      meetings: all,
+      sales,
+      marketingEntries: [ads],
+      crmLeads: [],
+      matches: matchMeetingsToSales(all, sales),
+    })
+
+    // Totais e conversão do closer: todas as origens.
+    expect(m.meetings).toBe(12)
+    expect(m.meetingSales).toBe(1)
+    expect(m.meetingWinRate).toBeCloseTo(1 / 12)
+    // Funil do tráfego: só o que veio dos 45 leads da Meta.
+    expect(m.paidMeetings).toBe(11)
+    expect(m.otherMeetings).toBe(1)
+    expect(m.schedulingRate).toBeCloseTo(11 / 45)
+    expect(m.costPerMeetingCents).toBe(Math.round(201_325 / 11))
+    // A venda da indicação NÃO entra no win rate de lead, no CAC nem no ROAS.
+    expect(m.paidMeetingSales).toBe(0)
+    expect(m.leadWinRate).toBe(0)
+    expect(m.cacCents).toBeNull()
+    expect(m.roas).toBeNull()
+    expect(m.otherMeetingSales).toBe(1)
+  })
+
+  it('reunião sem origem conta como tráfego pago (dados antigos)', () => {
+    const m = meeting('2026-09-03', 'Antiga')
+    expect(isPaidTraffic(m)).toBe(true)
+    expect(isPaidTraffic({ source: 'organico' })).toBe(false)
   })
 })
