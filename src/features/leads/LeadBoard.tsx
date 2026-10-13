@@ -27,6 +27,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { LabelEditor } from '@/components/LabelEditor'
 
 /** Ordem das colunas: o funil aberto, depois os dois desfechos. */
 const BOARD_STAGES = [...OPEN_LEAD_STAGES, 'ganho', 'perdido'] as LeadStage[]
@@ -168,7 +169,10 @@ function StageColumn({
     >
       <div className="border-b border-border px-3 py-2.5">
         <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-sm font-medium">{LEAD_STAGE_LABEL[stage]}</span>
+          <span className="flex min-w-0 items-center gap-0.5">
+            <span className="truncate text-sm font-medium">{LEAD_STAGE_LABEL[stage]}</span>
+            <LabelEditor group="leadStage" />
+          </span>
           <Badge variant="muted" className="shrink-0">
             {leads.length}
           </Badge>

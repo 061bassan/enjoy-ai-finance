@@ -80,6 +80,7 @@ import {
   useSales,
 } from '@/hooks/data'
 import { MeetingDialog } from './MeetingDialog'
+import { LabelEditor } from '@/components/LabelEditor'
 
 const ACCENT = 'hsl(var(--primary))'
 const SECONDARY = 'hsl(var(--muted-foreground))'
@@ -392,7 +393,11 @@ export function CommercialMetricsPage() {
                   <TableRow>
                     <TableHead className="w-[96px]">Data</TableHead>
                     <TableHead>Nome</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>
+                      <span className="flex items-center gap-1">
+                        Status <LabelEditor group="meetingStatus" />
+                      </span>
+                    </TableHead>
                     <TableHead className="hidden md:table-cell">Proposta</TableHead>
                     <TableHead className="hidden lg:table-cell">Quem fez</TableHead>
                     <TableHead className="hidden xl:table-cell">Criativo</TableHead>

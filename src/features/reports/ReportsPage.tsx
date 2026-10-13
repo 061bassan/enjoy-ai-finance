@@ -25,6 +25,7 @@ import {
 } from '@/domain/finance'
 import { saleEconomics, summarizeSales } from '@/domain/sales'
 import { commercialKpis, daysInPeriod, totalizeCommercial } from '@/domain/commercial'
+import { withMeetingRegistry } from '@/domain/commercialMetrics'
 import { leadsInPeriod } from '@/domain/leads'
 import { usePeriod } from '@/app/period'
 import { useSession } from '@/app/session'
@@ -47,6 +48,7 @@ import {
   useCategories,
   useClients,
   useCommercialDays,
+  useCommercialMeetings,
   useLeads,
   useProfileMap,
   useSales,
@@ -76,16 +78,14 @@ export function ReportsPage() {
   const { data: accounts = [] } = useAccounts()
   const { data: clients = [] } = useClients()
   const { data: days = [] } = useCommercialDays()
+  const { data: registeredMeetings = [] } = useCommercialMeetings()
   const { data: leads = [] } = useLeads()
   // Mesmo divisor da tela de Funil de vendas: o CAC do relatório não pode
   // divergir do CAC que a pessoa acabou de ver na tela.
   const marketingCents = useMarketingInvestment(range)
   const profileMap = useProfileMap()
 
-  const periodLeadCount = React.useMemo(
-    () => leadsInPeriod(leads, range).length,
-    [leads, range],
-  )
+  const periodLeadCount = React.useMemo(() => leadsInPeriod(leads, range).length, [leads, range])
   // Leads e CPL na visão de Marketing (prefere o número que a plataforma
   // informou) — sem isso, o relatório mostrava investimento e nunca dizia
   // quantos leads a verba trouxe segundo quem vendeu o anúncio.
@@ -112,7 +112,11 @@ export function ReportsPage() {
     const periodBills = bills.filter(
       (bill) => bill.dueDate >= range.from && bill.dueDate <= range.to,
     )
-    const commercial = totalizeCommercial(daysInPeriod(days, range))
+    const commercial = withMeetingRegistry(
+      totalizeCommercial(daysInPeriod(days, range)),
+      registeredMeetings,
+      range,
+    )
 
     return {
       transactions: periodTransactions,
@@ -132,7 +136,17 @@ export function ReportsPage() {
       }),
       billViews: toBillViews(periodBills, payments),
     }
-  }, [transactions, sales, bills, payments, days, periodLeadCount, marketingCents, range])
+  }, [
+    registeredMeetings,
+    transactions,
+    sales,
+    bills,
+    payments,
+    days,
+    periodLeadCount,
+    marketingCents,
+    range,
+  ])
 
   const periodLabel = `${formatDate(range.from)} a ${formatDate(range.to)}`
   const fileSuffix = `${range.from}_${range.to}`

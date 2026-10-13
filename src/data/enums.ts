@@ -274,3 +274,56 @@ export const PRIORITY_LABEL: Record<1 | 2 | 3 | 4 | 5, string> = {
 export function optionsFrom<T extends string>(labels: Record<T, string>): { value: T; label: string }[] {
   return (Object.keys(labels) as T[]).map((value) => ({ value, label: labels[value] }))
 }
+
+// ---------------------------------------------------------------------------
+// Etiquetas editáveis
+// ---------------------------------------------------------------------------
+
+/**
+ * Grupos de etiqueta que o time pode renomear na própria tela ("Perdida" →
+ * "Desistente").
+ *
+ * Só o TEXTO muda: o valor gravado no banco (`perdida`) continua o mesmo, então
+ * métrica, filtro e relatório que dependem do valor não percebem a troca. É o
+ * que torna seguro deixar qualquer administrador renomear.
+ *
+ * Os mapas acima são sobrescritos no lugar por `applyLabelOverrides` — assim
+ * TODA tela que já usa `MEETING_STATUS_LABEL[...]` (lista, filtro, relatório,
+ * CSV, descrição de título) passa a mostrar o nome novo sem ser reescrita.
+ */
+export const EDITABLE_LABEL_GROUPS = {
+  meetingStatus: { title: 'Status da reunião', labels: MEETING_STATUS_LABEL },
+  saleProduct: { title: 'Produtos', labels: SALE_PRODUCT_LABEL },
+  saleStatus: { title: 'Status da venda', labels: SALE_STATUS_LABEL },
+  leadStage: { title: 'Etapas do lead', labels: LEAD_STAGE_LABEL },
+  leadSource: { title: 'Origem do lead', labels: LEAD_SOURCE_LABEL },
+} as const satisfies Record<string, { title: string; labels: Record<string, string> }>
+
+export type LabelGroup = keyof typeof EDITABLE_LABEL_GROUPS
+/** Grupo → valor → texto escolhido pelo time. Só guarda o que difere do padrão. */
+export type LabelOverrides = Partial<Record<LabelGroup, Record<string, string>>>
+
+/** Os textos de fábrica, copiados antes de qualquer sobrescrita. */
+const DEFAULT_LABELS: Record<LabelGroup, Record<string, string>> = Object.fromEntries(
+  Object.entries(EDITABLE_LABEL_GROUPS).map(([group, { labels }]) => [group, { ...labels }]),
+) as unknown as Record<LabelGroup, Record<string, string>>
+
+export function defaultLabel(group: LabelGroup, value: string): string {
+  return DEFAULT_LABELS[group][value] ?? value
+}
+
+/**
+ * Volta todos os mapas ao padrão e aplica as etiquetas do time por cima.
+ * Idempotente: chamar duas vezes com o mesmo mapa dá o mesmo resultado, e um
+ * valor removido do mapa volta ao texto de fábrica.
+ */
+export function applyLabelOverrides(overrides: LabelOverrides | null | undefined) {
+  for (const group of Object.keys(EDITABLE_LABEL_GROUPS) as LabelGroup[]) {
+    const target = EDITABLE_LABEL_GROUPS[group].labels as Record<string, string>
+    const custom = overrides?.[group] ?? {}
+    for (const [value, text] of Object.entries(DEFAULT_LABELS[group])) {
+      const chosen = custom[value]?.trim()
+      target[value] = chosen ? chosen : text
+    }
+  }
+}

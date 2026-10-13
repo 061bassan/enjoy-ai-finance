@@ -21,7 +21,9 @@ import type {
   SaleStatus,
 } from '@/data/types'
 import { useSession } from '@/app/session'
-import { useAccounts, useCreateSale, useSettleBill, useUpdateSale } from '@/hooks/data'
+import { useAccounts, useCreate, useCreateSale, useSettleBill, useUpdateSale } from '@/hooks/data'
+import { data } from '@/data'
+import { nameTokens } from '@/domain/commercialMetrics'
 import { buildReceivables } from '@/data/receivables'
 import { commissionBase } from '@/domain/sales'
 import { DateField } from '@/components/DateField'
@@ -47,6 +49,7 @@ import {
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { LabelEditor } from '@/components/LabelEditor'
 
 const NONE = '__none__'
 
@@ -90,6 +93,7 @@ export function SaleDialog({
   const createSale = useCreateSale()
   const updateSale = useUpdateSale()
   const settleBill = useSettleBill()
+  const createClient = useCreate('clients', data.clients)
   const { data: accounts = [] } = useAccounts()
   const isEditing = sale != null
 
@@ -414,8 +418,38 @@ export function SaleDialog({
       return
     }
 
+    // Toda venda pertence a um cliente. Sem isto, venda com "Novo cliente"
+    // ficava fora da carteira, da meta "Novos clientes", do churn e da receita
+    // por cliente — só a conversão de lead criava o cliente. Reaproveita o
+    // cliente de MESMO nome (sem acento/maiúscula) antes de criar outro, para a
+    // carteira não duplicar quem já existe.
+    let resolvedClientId = clientId === NONE ? null : clientId
+    if (!resolvedClientId) {
+      const key = nameTokens(clientName).join(' ')
+      const existing = clients.find((client) => nameTokens(client.name).join(' ') === key)
+      if (existing) {
+        resolvedClientId = existing.id
+      } else {
+        try {
+          const created = await createClient.mutateAsync({
+            workspaceId: session.workspaceId,
+            name: clientName.trim(),
+            company: company.trim() || null,
+            status: 'active',
+            source: (leadSource || null) as LeadSource | null,
+            startDate: saleDate,
+          })
+          resolvedClientId = created.id
+        } catch {
+          // Sem permissão de criar cliente (ou falha de rede): a venda sai do
+          // mesmo jeito, como antes — melhor venda sem cliente que venda perdida.
+          toast.warning('Venda salva sem cliente vinculado — cadastre o cliente em Clientes.')
+        }
+      }
+    }
+
     const fields = {
-      clientId: clientId === NONE ? null : clientId,
+      clientId: resolvedClientId,
       clientName: clientName.trim(),
       company: company.trim() || null,
       saleDate,
@@ -602,7 +636,10 @@ export function SaleDialog({
                 <h3 className="text-sm font-medium">Produto e modalidade</h3>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-1.5">
-                    <Label>Produto</Label>
+                    <span className="flex items-center gap-1">
+                      <Label>Produto</Label>
+                      <LabelEditor group="saleProduct" />
+                    </span>
                     <ChoiceGroup
                       value={product}
                       onChange={(value) => setProduct(value as SaleProduct)}
@@ -873,7 +910,10 @@ export function SaleDialog({
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label>Origem do lead</Label>
+                  <span className="flex items-center gap-1">
+                    <Label>Origem do lead</Label>
+                    <LabelEditor group="leadSource" />
+                  </span>
                   <Select
                     value={leadSource}
                     onValueChange={(value) => setLeadSource(value as LeadSource)}
@@ -948,7 +988,10 @@ export function SaleDialog({
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label>Status</Label>
+                  <span className="flex items-center gap-1">
+                    <Label>Status</Label>
+                    <LabelEditor group="saleStatus" />
+                  </span>
                   <Select value={status} onValueChange={(value) => setStatus(value as SaleStatus)}>
                     <SelectTrigger>
                       <SelectValue />

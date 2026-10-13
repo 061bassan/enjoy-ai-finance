@@ -21,6 +21,7 @@ import {
   daysInPeriod,
   totalizeCommercial,
 } from '@/domain/commercial'
+import { withMeetingRegistry } from '@/domain/commercialMetrics'
 import { leadsInPeriod } from '@/domain/leads'
 import { activeSales } from '@/domain/sales'
 import { usePeriod } from '@/app/period'
@@ -54,13 +55,14 @@ import {
 import { ChartFrame, ChartTooltip, chartColor } from '@/components/charts/primitives'
 import {
   useCommercialDays,
+  useCommercialMeetings,
   useCreate,
   useLeads,
   useRemove,
   useSales,
   useUpdate,
 } from '@/hooks/data'
-import { useMarketingInvestment } from '@/hooks/marketing'
+import { useMarketingInvestment, useMarketingLeadCpl } from '@/hooks/marketing'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import {
   DropdownMenu,
@@ -75,12 +77,19 @@ export function CommercialPage() {
   const canManage = allow('manage:commercial')
 
   const { data: days = [] } = useCommercialDays()
+  const { data: registeredMeetings = [] } = useCommercialMeetings()
   const { data: sales = [] } = useSales()
   const { data: leads = [] } = useLeads()
   // A verba de anúncios agora tem tela própria. Ela entra aqui somando ao
   // investimento do diário: um CAC que enxergasse só metade do custo diria
   // que adquirir cliente é mais barato do que é.
   const marketingCents = useMarketingInvestment(range)
+  // Leads do funil: os da plataforma (Marketing) primeiro, os do CRM se a
+  // plataforma não informou — a mesma regra de Marketing, Leads e Métricas
+  // comerciais. Antes o funil só via o CRM e mostrava "indisponível" com 50
+  // leads lançados no Marketing.
+  const crmLeadCount = React.useMemo(() => leadsInPeriod(leads, range).length, [leads, range])
+  const funnelLeads = useMarketingLeadCpl(range, crmLeadCount).leadCount
   const removeDay = useRemove('commercialDays', data.commercialDays)
 
   const [dialogOpen, setDialogOpen] = React.useState(false)
@@ -89,31 +98,30 @@ export function CommercialPage() {
 
   const metrics = React.useMemo(() => {
     const period = daysInPeriod(days, range)
-    const totals = totalizeCommercial(period)
+    const totals = withMeetingRegistry(totalizeCommercial(period), registeredMeetings, range)
     const periodSales = sales.filter(
       (sale) => sale.saleDate >= range.from && sale.saleDate <= range.to,
     )
     const activePeriodSales = activeSales(periodSales)
-    const periodLeads = leadsInPeriod(leads, range)
 
     return {
       period,
       totals,
-      leadCount: periodLeads.length,
+      leadCount: funnelLeads,
       // O win rate agora é vendas ÷ leads, então precisa do CRM: sem o
       // `leadCount` ele cairia no total digitado no diário sem necessidade.
       kpis: commercialKpis(totals, periodSales, {
-        leadCount: periodLeads.length,
+        leadCount: funnelLeads,
         extraInvestmentCents: marketingCents,
       }),
       funnel: buildFunnel(totals, {
-        leadCount: periodLeads.length,
+        leadCount: funnelLeads,
         salesCount: activePeriodSales.length,
         extraInvestmentCents: marketingCents,
       }),
       series: commercialSeries(period),
     }
-  }, [days, sales, leads, marketingCents, range])
+  }, [registeredMeetings, days, sales, funnelLeads, marketingCents, range])
 
   return (
     <>
@@ -628,9 +636,9 @@ function CommercialDayDialog({
                 nos dois lugares soma duas vezes — daí o aviso, e não a
                 remoção do campo (que apagaria o hábito de quem já lança). */}
             <p className="mb-3 text-xs text-muted-foreground">
-              Anúncios agora têm lugar próprio em <strong>Marketing</strong>, por mês e por
-              canal. Se você já lançou a verba lá, deixe “Tráfego” em zero aqui — os dois
-              valores somam no CPL e no CAC.
+              Anúncios agora têm lugar próprio em <strong>Marketing</strong>, por mês e por canal.
+              Se você já lançou a verba lá, deixe “Tráfego” em zero aqui — os dois valores somam no
+              CPL e no CAC.
             </p>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {MONEY_FIELDS.map((field) => (

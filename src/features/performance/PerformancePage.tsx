@@ -23,6 +23,7 @@ import type { LeadSource } from '@/data/types'
 import { expensesByCostCenter, inRange, monthlySeries, revenueByCategory } from '@/domain/finance'
 import { activeSales, performanceBySeller, revenueBySource } from '@/domain/sales'
 import { buildFunnel, daysInPeriod, totalizeCommercial } from '@/domain/commercial'
+import { withMeetingRegistry } from '@/domain/commercialMetrics'
 import { usePeriod } from '@/app/period'
 import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
@@ -37,6 +38,7 @@ import {
 import {
   useCategories,
   useCommercialDays,
+  useCommercialMeetings,
   useProfileMap,
   useSales,
   useTransactions,
@@ -56,6 +58,7 @@ export function PerformancePage() {
   const { data: sales = [] } = useSales()
   const { data: categories = [] } = useCategories()
   const { data: days = [] } = useCommercialDays()
+  const { data: registeredMeetings = [] } = useCommercialMeetings()
   // O funil desta tela mostra custo por etapa: sem o marketing, cada etapa
   // pareceria mais barata do que é.
   const marketingCents = useMarketingInvestment(range)
@@ -63,7 +66,8 @@ export function PerformancePage() {
 
   const metrics = React.useMemo(() => {
     const months = monthsInRange(range)
-    const seriesMonths = months.length > 1 ? months : monthsInRange({ from: range.from, to: range.to })
+    const seriesMonths =
+      months.length > 1 ? months : monthsInRange({ from: range.from, to: range.to })
     const series = monthlySeries(transactions, seriesMonths)
     const current = inRange(transactions, range)
 
@@ -87,7 +91,11 @@ export function PerformancePage() {
       return { month, mrrCents: bucket.mrr, tcvCents: bucket.tcv, count: bucket.count }
     })
 
-    const commercial = totalizeCommercial(daysInPeriod(days, range))
+    const commercial = withMeetingRegistry(
+      totalizeCommercial(daysInPeriod(days, range)),
+      registeredMeetings,
+      range,
+    )
 
     return {
       series,
@@ -99,7 +107,7 @@ export function PerformancePage() {
       bySource: revenueBySource(periodSales),
       funnel: buildFunnel(commercial, { extraInvestmentCents: marketingCents }),
     }
-  }, [transactions, sales, categories, days, marketingCents, range])
+  }, [registeredMeetings, transactions, sales, categories, days, marketingCents, range])
 
   return (
     <>
@@ -128,7 +136,11 @@ export function PerformancePage() {
                 width={70}
               />
               <RechartsTooltip content={<ChartTooltip />} labelFormatter={formatMonthLabel} />
-              <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} iconType="circle" iconSize={7} />
+              <Legend
+                wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
+                iconType="circle"
+                iconSize={7}
+              />
               <Bar
                 dataKey="revenueCents"
                 name="Receita"
@@ -214,7 +226,11 @@ export function PerformancePage() {
                 width={70}
               />
               <RechartsTooltip content={<ChartTooltip />} labelFormatter={formatMonthLabel} />
-              <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} iconType="circle" iconSize={7} />
+              <Legend
+                wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
+                iconType="circle"
+                iconSize={7}
+              />
               <Bar
                 dataKey="tcvCents"
                 name="TCV"
@@ -254,9 +270,7 @@ export function PerformancePage() {
                   ))}
                 </Pie>
                 <RechartsTooltip
-                  content={
-                    <ChartTooltip />
-                  }
+                  content={<ChartTooltip />}
                   formatter={(value: number, name: string) => [
                     formatMoney(value),
                     LEAD_SOURCE_LABEL[name as LeadSource] ?? name,

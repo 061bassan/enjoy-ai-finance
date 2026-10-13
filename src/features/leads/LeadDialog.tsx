@@ -49,6 +49,7 @@ import {
   useRemove,
   useUpdate,
 } from '@/hooks/data'
+import { LabelEditor } from '@/components/LabelEditor'
 
 /**
  * Cadastro e acompanhamento de um lead.
@@ -284,7 +285,10 @@ export function LeadDialog({
 
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
-              <Label>Etapa</Label>
+              <span className="flex items-center gap-1">
+                <Label>Etapa</Label>
+                <LabelEditor group="leadStage" />
+              </span>
               <Select
                 value={stage}
                 onValueChange={(value) => setStage(value as LeadStage)}
@@ -307,7 +311,10 @@ export function LeadDialog({
             </div>
 
             <div className="space-y-1.5">
-              <Label>Origem</Label>
+              <span className="flex items-center gap-1">
+                <Label>Origem</Label>
+                <LabelEditor group="leadSource" />
+              </span>
               <Select
                 value={source}
                 onValueChange={(value) => setSource(value as LeadSource)}
@@ -465,8 +472,8 @@ export function LeadDialog({
 
               {timeline.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  Nenhum registro ainda. Cada toque anotado aqui vira histórico de quem cuidou
-                  deste lead.
+                  Nenhum registro ainda. Cada toque anotado aqui vira histórico de quem cuidou deste
+                  lead.
                 </p>
               ) : (
                 <ul className="max-h-56 space-y-2.5 overflow-y-auto pr-1">
