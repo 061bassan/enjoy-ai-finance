@@ -138,6 +138,21 @@ export function meetingHappened(meeting: CommercialMeeting): boolean {
   return meeting.status !== 'agendada' && meeting.status !== 'no_show'
 }
 
+/**
+ * A reunião veio do tráfego pago?
+ *
+ * É o recorte que decide em quais contas ela entra. Lead e verba de anúncio só
+ * existem para o tráfego: dividir o investimento da Meta por uma reunião de
+ * indicação, ou somar essa reunião ao "reunião ÷ lead", mistura um funil que
+ * custou dinheiro com um que não custou — e o tráfego parece melhor do que é.
+ *
+ * Sem origem informada conta como tráfego: era o único funil que a planilha
+ * acompanhava, e é o padrão do formulário.
+ */
+export function isPaidTraffic(meeting: Pick<CommercialMeeting, 'source'>): boolean {
+  return meeting.source == null || meeting.source === 'trafego_pago'
+}
+
 export interface CommercialMetrics {
   leads: number
   leadsOrigin: LeadCountOrigin
@@ -160,11 +175,24 @@ export interface CommercialMetrics {
   /** Reuniões marcadas "fechada" sem venda encontrada — pendência de cadastro. */
   closedWithoutSale: number
 
-  /** Reuniões ÷ leads — a "win rate reuniões" da planilha. */
+  /**
+   * O recorte do TRÁFEGO PAGO (ver `isPaidTraffic`). É a base de tudo que
+   * divide por lead ou por verba de anúncio: agendamento, win rate venda ÷
+   * lead, custo por reunião, CAC e ROAS. Indicação e orgânico ficam fora
+   * dessas contas e aparecem em `otherMeetings` / na quebra por origem.
+   */
+  paidMeetings: number
+  paidMeetingSales: number
+  paidRevenueCents: Cents
+  /** Reuniões de outras origens (indicação, orgânico…) — não entram nas taxas do tráfego. */
+  otherMeetings: number
+  otherMeetingSales: number
+
+  /** Reuniões do tráfego ÷ leads — a "win rate reuniões" da planilha. */
   schedulingRate: number | null
-  /** Vendas do funil ÷ leads — a "win rate (venda/lead)" da planilha. */
+  /** Vendas do tráfego ÷ leads — a "win rate (venda/lead)" da planilha. */
   leadWinRate: number | null
-  /** Vendas vindas de reunião ÷ reuniões realizadas. */
+  /** Vendas vindas de reunião ÷ reuniões realizadas — TODAS as origens (mede o closer). */
   meetingWinRate: number | null
   noShowRate: number | null
   cplCents: Cents | null
@@ -211,10 +239,14 @@ export function commercialMetrics(input: {
     )
     .filter((days) => days >= 0)
 
-  const meetingRevenue = converted.reduce(
-    (sum, meeting) => sum + matches.get(meeting.id)!.amountCents,
-    0,
-  )
+  const revenueOf = (list: readonly CommercialMeeting[]) =>
+    list.reduce((sum, meeting) => sum + matches.get(meeting.id)!.amountCents, 0)
+  const meetingRevenue = revenueOf(converted)
+
+  // Funil do tráfego: só o que tem lead e verba de anúncio por trás.
+  const paid = meetings.filter(isPaidTraffic)
+  const paidConverted = converted.filter(isPaidTraffic)
+  const paidRevenue = revenueOf(paidConverted)
 
   const ads = marketing.adsCents
   const perUnit = (count: number) => (ads > 0 && count > 0 ? Math.round(ads / count) : null)
@@ -232,15 +264,21 @@ export function commercialMetrics(input: {
     meetingSales: converted.length,
     meetingRevenueCents: meetingRevenue,
     closedWithoutSale,
+    paidMeetings: paid.length,
+    paidMeetingSales: paidConverted.length,
+    paidRevenueCents: paidRevenue,
+    otherMeetings: meetings.length - paid.length,
+    otherMeetingSales: converted.length - paidConverted.length,
     // Mês sem reunião registrada não é "0% de agendamento" — é mês sem dado.
-    schedulingRate: meetings.length ? safeRatio(meetings.length, leadCount) : null,
-    leadWinRate: meetings.length ? safeRatio(converted.length, leadCount) : null,
+    // Tudo que divide por lead ou por verba usa SÓ o tráfego pago.
+    schedulingRate: meetings.length ? safeRatio(paid.length, leadCount) : null,
+    leadWinRate: meetings.length ? safeRatio(paidConverted.length, leadCount) : null,
     meetingWinRate: safeRatio(converted.length, held.length),
     noShowRate: safeRatio(noShows, held.length + noShows),
     cplCents: perUnit(leadCount),
-    costPerMeetingCents: perUnit(meetings.length),
-    cacCents: perUnit(converted.length),
-    roas: ads > 0 && converted.length ? meetingRevenue / ads : null,
+    costPerMeetingCents: perUnit(paid.length),
+    cacCents: perUnit(paidConverted.length),
+    roas: ads > 0 && paidConverted.length ? paidRevenue / ads : null,
     averageTicketCents: converted.length ? Math.round(meetingRevenue / converted.length) : null,
     averageCycleDays: cycles.length
       ? Math.round(cycles.reduce((sum, days) => sum + days, 0) / cycles.length)

@@ -589,7 +589,17 @@ export interface CommercialMeeting extends ScopedEntity {
   product?: SaleProduct | null
   /** Quem fez a call. Texto livre: às vezes são duas pessoas ("João e Diogo"). */
   hostName?: string | null
-  /** Criativo ou origem que gerou a call ("Depoimento Rafaela V2", "Orgânico"). */
+  /**
+   * De onde o lead veio. Separa o funil do TRÁFEGO (o único que tem lead e
+   * investimento de anúncio por trás) das reuniões que chegaram por indicação,
+   * orgânico, evento… — ver `isPaidTraffic`. Nulo = reunião antiga sem origem,
+   * tratada como tráfego pago (era o único funil registrado na planilha).
+   */
+  source?: LeadSource | null
+  /**
+   * Detalhe da origem: o criativo do anúncio ("Depoimento Rafaela V2") quando
+   * veio do tráfego; quem indicou ou o evento, nas demais origens.
+   */
   creative?: string | null
   /**
    * Venda vinculada à mão. Vence o casamento por nome — serve para quando o

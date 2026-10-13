@@ -1,8 +1,13 @@
 import * as React from 'react'
 import { toast } from 'sonner'
 import { data } from '@/data'
-import { MEETING_STATUS_LABEL, SALE_PRODUCT_LABEL, optionsFrom } from '@/data/enums'
-import type { CommercialMeeting, MeetingStatus, Sale, SaleProduct } from '@/data/types'
+import {
+  LEAD_SOURCE_LABEL,
+  MEETING_STATUS_LABEL,
+  SALE_PRODUCT_LABEL,
+  optionsFrom,
+} from '@/data/enums'
+import type { CommercialMeeting, LeadSource, MeetingStatus, Sale, SaleProduct } from '@/data/types'
 import { formatDate, type IsoDate } from '@/lib/date'
 import { formatMoney } from '@/lib/money'
 import { namesMatch } from '@/domain/commercialMetrics'
@@ -78,6 +83,8 @@ export function MeetingDialog({
   const [proposal, setProposal] = React.useState('')
   const [hostName, setHostName] = React.useState('')
   const [creative, setCreative] = React.useState('')
+  // Padrão tráfego pago: é o funil principal e o que a planilha acompanhava.
+  const [source, setSource] = React.useState<LeadSource>('trafego_pago')
   const [saleId, setSaleId] = React.useState<string>(AUTO)
   const [notes, setNotes] = React.useState('')
 
@@ -90,6 +97,7 @@ export function MeetingDialog({
     setProposal(meeting?.proposal ?? '')
     setHostName(meeting?.hostName ?? '')
     setCreative(meeting?.creative ?? '')
+    setSource(meeting?.source ?? 'trafego_pago')
     setSaleId(meeting?.saleId ?? AUTO)
     setNotes(meeting?.notes ?? '')
   }, [open, meeting, defaultDate])
@@ -123,6 +131,7 @@ export function MeetingDialog({
       proposal: proposal.trim() || null,
       hostName: hostName.trim() || null,
       creative: creative.trim() || null,
+      source,
       saleId: saleId === AUTO ? null : saleId,
       notes: notes.trim() || null,
     }
@@ -235,13 +244,49 @@ export function MeetingDialog({
               </datalist>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="meeting-creative">Criativo que gerou a call</Label>
+              <span className="flex items-center gap-1">
+                <Label>Origem</Label>
+                <LabelEditor group="leadSource" />
+              </span>
+              <Select value={source} onValueChange={(value) => setSource(value as LeadSource)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {optionsFrom(LEAD_SOURCE_LABEL).map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-muted-foreground">
+                {source === 'trafego_pago'
+                  ? 'Entra no funil do tráfego: agendamento, custo por reunião, win rate e CAC.'
+                  : 'Conta nas reuniões e vendas do mês, mas fica fora das taxas do tráfego — não veio de lead nem de verba de anúncio.'}
+              </p>
+            </div>
+
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label htmlFor="meeting-creative">
+                {source === 'trafego_pago'
+                  ? 'Criativo que gerou a call'
+                  : source === 'indicacao'
+                    ? 'Quem indicou'
+                    : 'Detalhe da origem'}
+              </Label>
               <Input
                 id="meeting-creative"
                 list="meeting-creatives"
                 value={creative}
                 onChange={(event) => setCreative(event.target.value)}
-                placeholder="Ex.: Depoimento Rafaela V2, Orgânico"
+                placeholder={
+                  source === 'trafego_pago'
+                    ? 'Ex.: Depoimento Rafaela V2'
+                    : source === 'indicacao'
+                      ? 'Ex.: cliente Kyoto'
+                      : 'Opcional'
+                }
               />
               <datalist id="meeting-creatives">
                 {creatives.map((item) => (
