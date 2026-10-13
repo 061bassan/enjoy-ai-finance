@@ -311,3 +311,44 @@ export function activeMonths(sources: {
   for (const entry of sources.marketingEntries) months.add(`${entry.month.slice(0, 7)}-01`)
   return [...months].sort()
 }
+
+// ---------------------------------------------------------------------------
+// Reuniões registradas → totais do funil (diário comercial)
+// ---------------------------------------------------------------------------
+
+/**
+ * Sobrepõe aos totais do diário comercial o que as REUNIÕES registradas dizem.
+ *
+ * Metas, Funil de vendas, Performance, Visão executiva, Relatórios e Leads
+ * contavam reuniões só pelo diário — que ninguém preenche desde que as calls
+ * passaram a ser registradas uma a uma. Sem esta ponte, a meta "Reuniões: 20"
+ * nunca andava e cada tela mostrava um número diferente.
+ *
+ * Regra: havendo reunião registrada no período, ela é a fonte (é o dado mais
+ * granular e o que o time de fato mantém); sem nenhuma, vale o diário como
+ * antes — quem só usa o diário não perde nada.
+ */
+export function withMeetingRegistry<
+  T extends {
+    calls: number
+    meetings: number
+    noShows: number
+    proposalsSent: number
+    proposalsApproved: number
+    proposalsRejected: number
+  },
+>(totals: T, meetings: readonly CommercialMeeting[], range: DateRange): T {
+  const inRange = meetings.filter((meeting) => isWithinRange(meeting.date, range))
+  if (!inRange.length) return totals
+  const count = (statuses: CommercialMeeting['status'][]) =>
+    inRange.filter((meeting) => statuses.includes(meeting.status)).length
+  return {
+    ...totals,
+    calls: inRange.length,
+    meetings: inRange.filter(meetingHappened).length,
+    noShows: count(['no_show']),
+    proposalsSent: count(['proposta', 'fechada']),
+    proposalsApproved: count(['fechada']),
+    proposalsRejected: count(['perdida']),
+  }
+}

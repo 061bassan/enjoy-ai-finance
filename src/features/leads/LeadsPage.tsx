@@ -12,6 +12,7 @@ import {
   winRateFromLeads,
 } from '@/domain/leads'
 import { daysInPeriod, totalizeCommercial } from '@/domain/commercial'
+import { withMeetingRegistry } from '@/domain/commercialMetrics'
 import { LEAD_SOURCE_LABEL, LEAD_STAGE_LABEL } from '@/data/enums'
 import type { Lead, LeadStage } from '@/data/types'
 import { canManageLead } from '@/data/rules/permissions'
@@ -43,6 +44,7 @@ import {
 } from '@/components/ui/table'
 import {
   useCommercialDays,
+  useCommercialMeetings,
   useLeads,
   useMoveLeadStage,
   useProfileMap,
@@ -80,6 +82,7 @@ export function LeadsPage() {
   const { data: leads = [], isLoading } = useLeads()
   const { data: sales = [] } = useSales()
   const { data: commercialDays = [] } = useCommercialDays()
+  const { data: registeredMeetings = [] } = useCommercialMeetings()
   // O investimento lançado em Marketing entra aqui pelo mesmo motivo que
   // entra no Funil de vendas: sem ele, o custo por lead desta tela mostraria
   // só metade do que foi gasto para trazer quem está na lista abaixo.
@@ -136,7 +139,11 @@ export function LeadsPage() {
   const marketingCpl = useMarketingLeadCpl(range, inPeriodLeads.length)
 
   const metrics = React.useMemo(() => {
-    const diary = totalizeCommercial(daysInPeriod(commercialDays, range))
+    const diary = withMeetingRegistry(
+      totalizeCommercial(daysInPeriod(commercialDays, range)),
+      registeredMeetings,
+      range,
+    )
 
     const totals = totalizeLeads(inPeriodLeads)
 
@@ -154,7 +161,7 @@ export function LeadsPage() {
       attention: leadsNeedingAttention(visibleLeads, today()),
       bySource: leadsBySource(inPeriodLeads),
     }
-  }, [visibleLeads, inPeriodLeads, sales, commercialDays, range])
+  }, [registeredMeetings, visibleLeads, inPeriodLeads, sales, commercialDays, range])
 
   /** A carteira de quem está olhando — o quadro usa para travar o arrasto. */
   const canMoveLead = React.useCallback(

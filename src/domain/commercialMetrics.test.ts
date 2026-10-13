@@ -4,6 +4,7 @@ import {
   commercialMetrics,
   matchMeetingsToSales,
   meetingBreakdown,
+  withMeetingRegistry,
   namesMatch,
 } from './commercialMetrics'
 
@@ -232,5 +233,42 @@ describe('mês sem reuniões registradas', () => {
     expect(may.leads).toBe(18)
     expect(may.schedulingRate).toBeNull()
     expect(may.leadWinRate).toBeNull()
+  })
+})
+
+describe('withMeetingRegistry', () => {
+  const diary = {
+    calls: 1,
+    meetings: 1,
+    noShows: 0,
+    proposalsSent: 0,
+    proposalsApproved: 0,
+    proposalsRejected: 0,
+    leads: 3,
+  }
+  const range = { from: '2026-09-01', to: '2026-09-30' }
+
+  it('reuniões registradas viram os números do funil', () => {
+    const ms = [
+      meeting('2026-09-03', 'A', { status: 'proposta' }),
+      meeting('2026-09-10', 'B', { status: 'agendada' }),
+      meeting('2026-09-12', 'C', { status: 'no_show' }),
+      meeting('2026-09-21', 'D', { status: 'fechada' }),
+      meeting('2026-09-22', 'E', { status: 'perdida' }),
+      meeting('2026-10-01', 'F', { status: 'proposta' }), // outro mês
+    ]
+    expect(withMeetingRegistry(diary, ms, range)).toEqual({
+      calls: 5,
+      meetings: 3,
+      noShows: 1,
+      proposalsSent: 2,
+      proposalsApproved: 1,
+      proposalsRejected: 1,
+      leads: 3, // o resto do diário fica intacto
+    })
+  })
+
+  it('sem reunião registrada no período, vale o diário', () => {
+    expect(withMeetingRegistry(diary, [], range)).toBe(diary)
   })
 })

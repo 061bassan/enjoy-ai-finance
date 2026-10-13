@@ -3,7 +3,14 @@ import type { DateRange } from '@/lib/date'
 import { grossRevenue, inRange, netMargin, netProfit } from '@/domain/finance'
 import { summarizeSales } from '@/domain/sales'
 import { daysInPeriod, totalizeCommercial } from '@/domain/commercial'
-import { useClients, useCommercialDays, useSales, useTransactions } from '@/hooks/data'
+import { withMeetingRegistry } from '@/domain/commercialMetrics'
+import {
+  useClients,
+  useCommercialDays,
+  useCommercialMeetings,
+  useSales,
+  useTransactions,
+} from '@/hooks/data'
 
 /** O realizado de um intervalo, no formato que `monthlyTargetProgress` espera. */
 export interface MonthActuals {
@@ -31,6 +38,7 @@ export function useMonthActuals() {
   const { data: transactions = [] } = useTransactions()
   const { data: sales = [] } = useSales()
   const { data: days = [] } = useCommercialDays()
+  const { data: registeredMeetings = [] } = useCommercialMeetings()
   const { data: clients = [] } = useClients()
 
   return React.useCallback(
@@ -40,7 +48,11 @@ export function useMonthActuals() {
         (sale) => sale.saleDate >= range.from && sale.saleDate <= range.to,
       )
       const summary = summarizeSales(periodSales)
-      const commercial = totalizeCommercial(daysInPeriod(days, range))
+      const commercial = withMeetingRegistry(
+        totalizeCommercial(daysInPeriod(days, range)),
+        registeredMeetings,
+        range,
+      )
       const newClients = clients.filter(
         (client) =>
           client.startDate && client.startDate >= range.from && client.startDate <= range.to,
@@ -59,6 +71,6 @@ export function useMonthActuals() {
         marginPercent: margin != null ? margin * 100 : 0,
       }
     },
-    [transactions, sales, days, clients],
+    [transactions, sales, days, clients, registeredMeetings],
   )
 }

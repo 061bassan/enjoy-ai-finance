@@ -26,6 +26,7 @@ import {
 import { monthlyCashflow, projectionMonths, workingCapital } from '@/domain/cashflow'
 import { activeMrr, arr, churnRate, lifetimeValue, ltvToCac, summarizeSales } from '@/domain/sales'
 import { commercialKpis, daysInPeriod, totalizeCommercial } from '@/domain/commercial'
+import { withMeetingRegistry } from '@/domain/commercialMetrics'
 import { leadsInPeriod } from '@/domain/leads'
 import { totalMonthlyCost } from '@/domain/recurrence'
 import { toBillViews, totalOutstanding, totalOverdue } from '@/domain/bills'
@@ -41,12 +42,13 @@ import {
   useBills,
   useClients,
   useCommercialDays,
+  useCommercialMeetings,
   useLeads,
   useRecurringRules,
   useSales,
   useTransactions,
 } from '@/hooks/data'
-import { useMarketingInvestment } from '@/hooks/marketing'
+import { useMarketingInvestment, useMarketingLeadCpl } from '@/hooks/marketing'
 
 /**
  * Dashboard executivo.
@@ -68,11 +70,15 @@ export function ExecutivePage() {
   const { data: bills = [] } = useBills()
   const { data: payments = [] } = useBillPayments()
   const { data: days = [] } = useCommercialDays()
+  const { data: registeredMeetings = [] } = useCommercialMeetings()
   const { data: leads = [] } = useLeads()
   const { data: rules = [] } = useRecurringRules()
   // Entra no CAC — e, por consequência, no LTV/CAC e no diagnóstico de saúde.
   // Sem isto, a tela que decide corte de verba ignoraria a própria verba.
   const marketingCents = useMarketingInvestment(range)
+  // Mesma regra do Funil e de Marketing: leads da plataforma primeiro, CRM depois.
+  const crmLeadCount = React.useMemo(() => leadsInPeriod(leads, range).length, [leads, range])
+  const resolvedLeads = useMarketingLeadCpl(range, crmLeadCount).leadCount
 
   const metrics = React.useMemo(() => {
     const current = inRange(transactions, range)
@@ -88,11 +94,15 @@ export function ExecutivePage() {
     const summary = summarizeSales(periodSales)
     const previousSummary = summarizeSales(previousSales)
 
-    const commercial = totalizeCommercial(daysInPeriod(days, range))
+    const commercial = withMeetingRegistry(
+      totalizeCommercial(daysInPeriod(days, range)),
+      registeredMeetings,
+      range,
+    )
     // O win rate é vendas ÷ leads: o CRM é o denominador preferido, e sem ele
     // o cálculo cai no total digitado no diário comercial.
     const kpis = commercialKpis(commercial, periodSales, {
-      leadCount: leadsInPeriod(leads, range).length,
+      leadCount: resolvedLeads,
       extraInvestmentCents: marketingCents,
     })
 
@@ -159,6 +169,7 @@ export function ExecutivePage() {
       yearSeries,
     }
   }, [
+    registeredMeetings,
     transactions,
     accounts,
     sales,
@@ -166,7 +177,7 @@ export function ExecutivePage() {
     bills,
     payments,
     days,
-    leads,
+    resolvedLeads,
     rules,
     marketingCents,
     range,
