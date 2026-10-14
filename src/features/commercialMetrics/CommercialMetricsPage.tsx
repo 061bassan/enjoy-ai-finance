@@ -22,7 +22,12 @@ import {
   Trash2,
 } from 'lucide-react'
 import { data } from '@/data'
-import { LEAD_SOURCE_LABEL, MEETING_STATUS_LABEL, SALE_PRODUCT_LABEL } from '@/data/enums'
+import {
+  LEAD_SOURCE_LABEL,
+  MEETING_REGION_LABEL,
+  MEETING_STATUS_LABEL,
+  SALE_PRODUCT_LABEL,
+} from '@/data/enums'
 import type { CommercialMeeting, MeetingStatus, Sale } from '@/data/types'
 import {
   formatDate,
@@ -34,6 +39,7 @@ import {
   type IsoDate,
 } from '@/lib/date'
 import { formatMoney, formatMoneyCompact, formatNumber, formatPercent } from '@/lib/money'
+import { cn } from '@/lib/cn'
 import {
   activeMonths,
   isPaidTraffic,
@@ -343,6 +349,80 @@ export function CommercialMetricsPage() {
             />
           </div>
 
+          <div className="grid gap-4 lg:grid-cols-5">
+            <Card className="p-4 lg:col-span-3">
+              <h3 className="mb-1 text-sm font-medium">
+                Marcações por mês: {MEETING_REGION_LABEL.brasilia} × {MEETING_REGION_LABEL.brasil}
+              </h3>
+              <p className="mb-2 text-xs text-muted-foreground">
+                Reuniões marcadas com leads de cada praça, todas as origens. Reunião sem região
+                informada não entra.
+              </p>
+              <Legend
+                items={[
+                  { label: MEETING_REGION_LABEL.brasilia, color: ACCENT },
+                  { label: MEETING_REGION_LABEL.brasil, color: SECONDARY },
+                ]}
+              />
+              <div className="mt-2 h-[220px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={series}
+                    margin={{ top: 8, right: 8, left: -8, bottom: 0 }}
+                    barGap={2}
+                  >
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke={chartColor('border')}
+                      vertical={false}
+                    />
+                    <XAxis
+                      dataKey="month"
+                      tickFormatter={formatMonthLabel}
+                      tick={{ fontSize: 11, fill: SECONDARY }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      allowDecimals={false}
+                      tick={{ fontSize: 11, fill: SECONDARY }}
+                      axisLine={false}
+                      tickLine={false}
+                      width={36}
+                    />
+                    <RechartsTooltip
+                      cursor={{ fill: 'hsl(var(--muted) / 0.4)' }}
+                      content={<ChartTooltip formatter={(v) => formatNumber(v)} />}
+                      labelFormatter={(label) => formatMonthLong(String(label))}
+                    />
+                    <Bar
+                      dataKey="brasiliaMeetings"
+                      name={MEETING_REGION_LABEL.brasilia}
+                      fill={ACCENT}
+                      radius={[4, 4, 0, 0]}
+                      maxBarSize={22}
+                    />
+                    <Bar
+                      dataKey="brasilMeetings"
+                      name={MEETING_REGION_LABEL.brasil}
+                      fill={SECONDARY}
+                      radius={[4, 4, 0, 0]}
+                      maxBarSize={22}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </Card>
+            <BreakdownCard
+              className="lg:col-span-2"
+              title="Por região no mês"
+              rows={meetingBreakdown(monthMeetings, matches, (m) =>
+                m.region ? MEETING_REGION_LABEL[m.region] : null,
+              )}
+              empty="Nenhuma reunião neste mês."
+            />
+          </div>
+
           {monthMeetings.length > 0 ? (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <BreakdownCard
@@ -410,6 +490,7 @@ export function CommercialMetricsPage() {
                         Status <LabelEditor group="meetingStatus" />
                       </span>
                     </TableHead>
+                    <TableHead className="hidden sm:table-cell">Região</TableHead>
                     <TableHead className="hidden md:table-cell">Proposta</TableHead>
                     <TableHead className="hidden lg:table-cell">Quem fez</TableHead>
                     <TableHead className="hidden xl:table-cell">Origem</TableHead>
@@ -684,11 +765,22 @@ function TrendCard<T extends { month: IsoDate }>({
   )
 }
 
-function BreakdownCard({ title, rows }: { title: string; rows: MeetingBreakdownRow[] }) {
+function BreakdownCard({
+  title,
+  rows,
+  className,
+  empty,
+}: {
+  title: string
+  rows: MeetingBreakdownRow[]
+  className?: string
+  empty?: string
+}) {
   const max = Math.max(1, ...rows.map((row) => row.meetings))
   return (
-    <Card className="p-4">
+    <Card className={cn('p-4', className)}>
       <h3 className="mb-3 text-sm font-medium">{title}</h3>
+      {rows.length === 0 && empty && <p className="text-sm text-muted-foreground">{empty}</p>}
       <ul className="space-y-3">
         {rows.map((row) => (
           <li key={row.label}>
@@ -745,6 +837,9 @@ function MeetingRow({
       <TableCell className="max-w-[160px] truncate font-medium">{meeting.name}</TableCell>
       <TableCell>
         <Badge variant={STATUS_TONE[meeting.status]}>{MEETING_STATUS_LABEL[meeting.status]}</Badge>
+      </TableCell>
+      <TableCell className="hidden text-muted-foreground sm:table-cell">
+        {meeting.region ? MEETING_REGION_LABEL[meeting.region] : '—'}
       </TableCell>
       <TableCell className="hidden max-w-[200px] truncate text-muted-foreground md:table-cell">
         {meeting.product ? SALE_PRODUCT_LABEL[meeting.product] : null}

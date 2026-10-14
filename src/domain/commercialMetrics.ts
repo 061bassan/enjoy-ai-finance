@@ -188,6 +188,13 @@ export interface CommercialMetrics {
   otherMeetings: number
   otherMeetingSales: number
 
+  /**
+   * Marcações por praça do lead (ver `CommercialMeeting.region`) — todas as
+   * origens. O que sobra de `meetings` são reuniões sem região informada.
+   */
+  brasiliaMeetings: number
+  brasilMeetings: number
+
   /** Reuniões do tráfego ÷ leads — a "win rate reuniões" da planilha. */
   schedulingRate: number | null
   /** Vendas do tráfego ÷ leads — a "win rate (venda/lead)" da planilha. */
@@ -269,6 +276,8 @@ export function commercialMetrics(input: {
     paidRevenueCents: paidRevenue,
     otherMeetings: meetings.length - paid.length,
     otherMeetingSales: converted.length - paidConverted.length,
+    brasiliaMeetings: meetings.filter((meeting) => meeting.region === 'brasilia').length,
+    brasilMeetings: meetings.filter((meeting) => meeting.region === 'brasil').length,
     // Mês sem reunião registrada não é "0% de agendamento" — é mês sem dado.
     // Tudo que divide por lead ou por verba usa SÓ o tráfego pago.
     schedulingRate: meetings.length ? safeRatio(paid.length, leadCount) : null,

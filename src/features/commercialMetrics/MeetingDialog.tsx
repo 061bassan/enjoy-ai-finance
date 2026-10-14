@@ -3,11 +3,19 @@ import { toast } from 'sonner'
 import { data } from '@/data'
 import {
   LEAD_SOURCE_LABEL,
+  MEETING_REGION_LABEL,
   MEETING_STATUS_LABEL,
   SALE_PRODUCT_LABEL,
   optionsFrom,
 } from '@/data/enums'
-import type { CommercialMeeting, LeadSource, MeetingStatus, Sale, SaleProduct } from '@/data/types'
+import type {
+  CommercialMeeting,
+  LeadSource,
+  MeetingRegion,
+  MeetingStatus,
+  Sale,
+  SaleProduct,
+} from '@/data/types'
 import { formatDate, type IsoDate } from '@/lib/date'
 import { formatMoney } from '@/lib/money'
 import { namesMatch } from '@/domain/commercialMetrics'
@@ -85,6 +93,9 @@ export function MeetingDialog({
   const [creative, setCreative] = React.useState('')
   // Padrão tráfego pago: é o funil principal e o que a planilha acompanhava.
   const [source, setSource] = React.useState<LeadSource>('trafego_pago')
+  // Sem padrão: é o dado da comparação Brasília × Brasil, então a reunião nova
+  // só salva com a região escolhida de propósito.
+  const [region, setRegion] = React.useState<MeetingRegion | null>(null)
   const [saleId, setSaleId] = React.useState<string>(AUTO)
   const [notes, setNotes] = React.useState('')
 
@@ -98,6 +109,7 @@ export function MeetingDialog({
     setHostName(meeting?.hostName ?? '')
     setCreative(meeting?.creative ?? '')
     setSource(meeting?.source ?? 'trafego_pago')
+    setRegion(meeting?.region ?? null)
     setSaleId(meeting?.saleId ?? AUTO)
     setNotes(meeting?.notes ?? '')
   }, [open, meeting, defaultDate])
@@ -122,6 +134,11 @@ export function MeetingDialog({
       toast.error('Informe o nome do lead.')
       return
     }
+    // Reunião antiga sem região continua editável; a nova precisa dela.
+    if (!meeting && !region) {
+      toast.error('Informe se o lead é de Brasília ou do Brasil.')
+      return
+    }
 
     const fields = {
       date,
@@ -132,6 +149,7 @@ export function MeetingDialog({
       hostName: hostName.trim() || null,
       creative: creative.trim() || null,
       source,
+      region,
       saleId: saleId === AUTO ? null : saleId,
       notes: notes.trim() || null,
     }
@@ -219,7 +237,7 @@ export function MeetingDialog({
               </Select>
             </div>
 
-            <div className="space-y-1.5 sm:col-span-2">
+            <div className="space-y-1.5">
               <Label htmlFor="meeting-proposal">Proposta</Label>
               <Input
                 id="meeting-proposal"
@@ -227,6 +245,27 @@ export function MeetingDialog({
                 onChange={(event) => setProposal(event.target.value)}
                 placeholder='Ex.: "PEAP 9k", "Start + tráfego"'
               />
+            </div>
+            <div className="space-y-1.5">
+              <span className="flex items-center gap-1">
+                <Label>Região</Label>
+                <LabelEditor group="meetingRegion" />
+              </span>
+              <Select
+                value={region ?? ''}
+                onValueChange={(value) => setRegion(value as MeetingRegion)}
+              >
+                <SelectTrigger aria-label="Região">
+                  <SelectValue placeholder="Brasília ou Brasil?" />
+                </SelectTrigger>
+                <SelectContent>
+                  {optionsFrom(MEETING_REGION_LABEL).map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-1.5">

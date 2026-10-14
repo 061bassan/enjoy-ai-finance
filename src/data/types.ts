@@ -572,6 +572,9 @@ export interface SaleCost extends ScopedEntity {
 export type MeetingStatus =
   'agendada' | 'realizada' | 'no_show' | 'proposta' | 'fechada' | 'perdida'
 
+/** Praça do lead da reunião: Brasília ou o resto do Brasil. */
+export type MeetingRegion = 'brasilia' | 'brasil'
+
 /**
  * Uma reunião (call) com um lead — uma linha da planilha "Métricas Comercial".
  *
@@ -601,6 +604,12 @@ export interface CommercialMeeting extends ScopedEntity {
    * veio do tráfego; quem indicou ou o evento, nas demais origens.
    */
   creative?: string | null
+  /**
+   * Onde é o lead: Brasília (a praça local) ou o resto do Brasil — para
+   * comparar o volume de marcações de cada um. Nulo = reunião antiga, sem
+   * região informada.
+   */
+  region?: MeetingRegion | null
   /**
    * Venda vinculada à mão. Vence o casamento por nome — serve para quando o
    * nome da reunião e o da venda não batem ("Raphela" × "Raphaela Souza").

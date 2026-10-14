@@ -317,3 +317,27 @@ describe('origem da reunião: tráfego pago × indicação', () => {
     expect(isPaidTraffic({ source: 'organico' })).toBe(false)
   })
 })
+
+describe('região da reunião: Brasília × Brasil', () => {
+  it('conta as marcações de cada praça e deixa de fora as sem região', () => {
+    const range = { from: '2026-10-01', to: '2026-10-31' }
+    const all = [
+      meeting('2026-10-02', 'A', { region: 'brasilia' }),
+      meeting('2026-10-03', 'B', { region: 'brasilia', source: 'indicacao' }),
+      meeting('2026-10-04', 'C', { region: 'brasil' }),
+      meeting('2026-10-05', 'D'),
+      meeting('2026-09-30', 'E', { region: 'brasil' }), // fora do mês
+    ]
+    const m = commercialMetrics({
+      range,
+      meetings: all,
+      sales: [],
+      marketingEntries: [],
+      crmLeads: [],
+      matches: matchMeetingsToSales(all, []),
+    })
+    expect(m.meetings).toBe(4)
+    expect(m.brasiliaMeetings).toBe(2)
+    expect(m.brasilMeetings).toBe(1)
+  })
+})
