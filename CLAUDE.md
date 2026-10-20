@@ -537,6 +537,14 @@ Três coisas a lembrar:
   `.env` (ou com `VITE_DATA_PROVIDER=local`) o app volta ao IndexedDB por dispositivo,
   útil para desenvolvimento offline.
 
+### Keep-alive do Supabase
+
+O free tier pausa o projeto após 7 dias sem uso (aconteceu em 2026-10 e derrubou todos
+os logins). `vercel.json` agenda um Cron Job (`0 6 * * 1`, segunda às 6h UTC) que chama
+`api/cron/keep-alive.ts`, uma consulta leve via PostgREST com a anon key. A rota exige
+`CRON_SECRET` nas variáveis da Vercel (Production): a Vercel o manda como `Bearer` em toda
+chamada de cron, e sem ele a rota responde 401 e o cron não faz nada.
+
 ### CI — pendência de permissão
 
 `.github/workflows/ci.yml` está escrito (typecheck → lint → testes → build, com o `dist`
