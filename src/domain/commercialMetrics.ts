@@ -195,6 +195,13 @@ export interface CommercialMetrics {
   brasiliaMeetings: number
   brasilMeetings: number
 
+  /**
+   * Marcações por canal de entrada do lead (ver `CommercialMeeting.leadChannel`)
+   * — todas as origens. Reunião sem canal informado fica de fora.
+   */
+  lpMeetings: number
+  whatsappMeetings: number
+
   /** Reuniões do tráfego ÷ leads — a "win rate reuniões" da planilha. */
   schedulingRate: number | null
   /** Vendas do tráfego ÷ leads — a "win rate (venda/lead)" da planilha. */
@@ -278,6 +285,8 @@ export function commercialMetrics(input: {
     otherMeetingSales: converted.length - paidConverted.length,
     brasiliaMeetings: meetings.filter((meeting) => meeting.region === 'brasilia').length,
     brasilMeetings: meetings.filter((meeting) => meeting.region === 'brasil').length,
+    lpMeetings: meetings.filter((meeting) => meeting.leadChannel === 'lp').length,
+    whatsappMeetings: meetings.filter((meeting) => meeting.leadChannel === 'whatsapp').length,
     // Mês sem reunião registrada não é "0% de agendamento" — é mês sem dado.
     // Tudo que divide por lead ou por verba usa SÓ o tráfego pago.
     schedulingRate: meetings.length ? safeRatio(paid.length, leadCount) : null,

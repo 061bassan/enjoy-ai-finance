@@ -20,6 +20,7 @@ import type {
   LeadSource,
   LeadStage,
   MarketingChannel,
+  MeetingLeadChannel,
   MeetingRegion,
   MeetingStatus,
   MemberStatus,
@@ -122,6 +123,11 @@ export const MEETING_STATUS_LABEL: Record<MeetingStatus, string> = {
 export const MEETING_REGION_LABEL: Record<MeetingRegion, string> = {
   brasilia: 'Brasília',
   brasil: 'Brasil',
+}
+
+export const MEETING_LEAD_CHANNEL_LABEL: Record<MeetingLeadChannel, string> = {
+  lp: 'LP',
+  whatsapp: 'WhatsApp',
 }
 
 export const SALE_PRODUCT_LABEL: Record<SaleProduct, string> = {
@@ -300,6 +306,7 @@ export function optionsFrom<T extends string>(labels: Record<T, string>): { valu
 export const EDITABLE_LABEL_GROUPS = {
   meetingStatus: { title: 'Status da reunião', labels: MEETING_STATUS_LABEL },
   meetingRegion: { title: 'Região da reunião', labels: MEETING_REGION_LABEL },
+  meetingLeadChannel: { title: 'Canal do lead', labels: MEETING_LEAD_CHANNEL_LABEL },
   saleProduct: { title: 'Produtos', labels: SALE_PRODUCT_LABEL },
   saleStatus: { title: 'Status da venda', labels: SALE_STATUS_LABEL },
   leadStage: { title: 'Etapas do lead', labels: LEAD_STAGE_LABEL },
