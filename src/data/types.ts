@@ -575,6 +575,9 @@ export type MeetingStatus =
 /** Praça do lead da reunião: Brasília ou o resto do Brasil. */
 export type MeetingRegion = 'brasilia' | 'brasil'
 
+/** Por onde o lead da reunião entrou: formulário da landing page ou WhatsApp. */
+export type MeetingLeadChannel = 'lp' | 'whatsapp'
+
 /**
  * Uma reunião (call) com um lead — uma linha da planilha "Métricas Comercial".
  *
@@ -610,6 +613,12 @@ export interface CommercialMeeting extends ScopedEntity {
    * região informada.
    */
   region?: MeetingRegion | null
+  /**
+   * Por onde o lead chegou: landing page (formulário) ou WhatsApp — para
+   * comparar volume e conversão de cada entrada. Nulo = reunião antiga, sem
+   * canal informado.
+   */
+  leadChannel?: MeetingLeadChannel | null
   /**
    * Venda vinculada à mão. Vence o casamento por nome — serve para quando o
    * nome da reunião e o da venda não batem ("Raphela" × "Raphaela Souza").

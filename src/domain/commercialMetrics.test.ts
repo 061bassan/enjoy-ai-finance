@@ -341,3 +341,27 @@ describe('região da reunião: Brasília × Brasil', () => {
     expect(m.brasilMeetings).toBe(1)
   })
 })
+
+describe('canal do lead: LP × WhatsApp', () => {
+  it('conta as marcações de cada canal e deixa de fora as sem canal', () => {
+    const range = { from: '2026-10-01', to: '2026-10-31' }
+    const all = [
+      meeting('2026-10-02', 'A', { leadChannel: 'lp' }),
+      meeting('2026-10-03', 'B', { leadChannel: 'whatsapp' }),
+      meeting('2026-10-04', 'C', { leadChannel: 'whatsapp', source: 'indicacao' }),
+      meeting('2026-10-05', 'D'),
+      meeting('2026-09-30', 'E', { leadChannel: 'lp' }), // fora do mês
+    ]
+    const m = commercialMetrics({
+      range,
+      meetings: all,
+      sales: [],
+      marketingEntries: [],
+      crmLeads: [],
+      matches: matchMeetingsToSales(all, []),
+    })
+    expect(m.meetings).toBe(4)
+    expect(m.lpMeetings).toBe(1)
+    expect(m.whatsappMeetings).toBe(2)
+  })
+})

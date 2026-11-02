@@ -24,6 +24,7 @@ import {
 import { data } from '@/data'
 import {
   LEAD_SOURCE_LABEL,
+  MEETING_LEAD_CHANNEL_LABEL,
   MEETING_REGION_LABEL,
   MEETING_STATUS_LABEL,
   SALE_PRODUCT_LABEL,
@@ -350,74 +351,46 @@ export function CommercialMetricsPage() {
           </div>
 
           <div className="grid gap-4 lg:grid-cols-5">
-            <Card className="p-4 lg:col-span-3">
-              <h3 className="mb-1 text-sm font-medium">
-                Marcações por mês: {MEETING_REGION_LABEL.brasilia} × {MEETING_REGION_LABEL.brasil}
-              </h3>
-              <p className="mb-2 text-xs text-muted-foreground">
-                Reuniões marcadas com leads de cada praça, todas as origens. Reunião sem região
-                informada não entra.
-              </p>
-              <Legend
-                items={[
-                  { label: MEETING_REGION_LABEL.brasilia, color: ACCENT },
-                  { label: MEETING_REGION_LABEL.brasil, color: SECONDARY },
-                ]}
-              />
-              <div className="mt-2 h-[220px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={series}
-                    margin={{ top: 8, right: 8, left: -8, bottom: 0 }}
-                    barGap={2}
-                  >
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      stroke={chartColor('border')}
-                      vertical={false}
-                    />
-                    <XAxis
-                      dataKey="month"
-                      tickFormatter={formatMonthLabel}
-                      tick={{ fontSize: 11, fill: SECONDARY }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      allowDecimals={false}
-                      tick={{ fontSize: 11, fill: SECONDARY }}
-                      axisLine={false}
-                      tickLine={false}
-                      width={36}
-                    />
-                    <RechartsTooltip
-                      cursor={{ fill: 'hsl(var(--muted) / 0.4)' }}
-                      content={<ChartTooltip formatter={(v) => formatNumber(v)} />}
-                      labelFormatter={(label) => formatMonthLong(String(label))}
-                    />
-                    <Bar
-                      dataKey="brasiliaMeetings"
-                      name={MEETING_REGION_LABEL.brasilia}
-                      fill={ACCENT}
-                      radius={[4, 4, 0, 0]}
-                      maxBarSize={22}
-                    />
-                    <Bar
-                      dataKey="brasilMeetings"
-                      name={MEETING_REGION_LABEL.brasil}
-                      fill={SECONDARY}
-                      radius={[4, 4, 0, 0]}
-                      maxBarSize={22}
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </Card>
+            <ComparisonBarCard
+              className="lg:col-span-3"
+              title={`Marcações por mês: ${MEETING_REGION_LABEL.brasilia} × ${MEETING_REGION_LABEL.brasil}`}
+              description="Reuniões marcadas com leads de cada praça, todas as origens. Reunião sem região informada não entra."
+              data={series}
+              bars={[
+                { key: 'brasiliaMeetings', label: MEETING_REGION_LABEL.brasilia, color: ACCENT },
+                { key: 'brasilMeetings', label: MEETING_REGION_LABEL.brasil, color: SECONDARY },
+              ]}
+            />
             <BreakdownCard
               className="lg:col-span-2"
               title="Por região no mês"
               rows={meetingBreakdown(monthMeetings, matches, (m) =>
                 m.region ? MEETING_REGION_LABEL[m.region] : null,
+              )}
+              empty="Nenhuma reunião neste mês."
+            />
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-5">
+            <ComparisonBarCard
+              className="lg:col-span-3"
+              title={`Marcações por mês: ${MEETING_LEAD_CHANNEL_LABEL.lp} × ${MEETING_LEAD_CHANNEL_LABEL.whatsapp}`}
+              description="Reuniões marcadas por canal de entrada do lead, todas as origens. Reunião sem canal informado não entra."
+              data={series}
+              bars={[
+                { key: 'lpMeetings', label: MEETING_LEAD_CHANNEL_LABEL.lp, color: ACCENT },
+                {
+                  key: 'whatsappMeetings',
+                  label: MEETING_LEAD_CHANNEL_LABEL.whatsapp,
+                  color: SECONDARY,
+                },
+              ]}
+            />
+            <BreakdownCard
+              className="lg:col-span-2"
+              title="Por canal do lead no mês"
+              rows={meetingBreakdown(monthMeetings, matches, (m) =>
+                m.leadChannel ? MEETING_LEAD_CHANNEL_LABEL[m.leadChannel] : null,
               )}
               empty="Nenhuma reunião neste mês."
             />
@@ -491,6 +464,7 @@ export function CommercialMetricsPage() {
                       </span>
                     </TableHead>
                     <TableHead className="hidden sm:table-cell">Região</TableHead>
+                    <TableHead className="hidden sm:table-cell">Canal</TableHead>
                     <TableHead className="hidden md:table-cell">Proposta</TableHead>
                     <TableHead className="hidden lg:table-cell">Quem fez</TableHead>
                     <TableHead className="hidden xl:table-cell">Origem</TableHead>
@@ -765,6 +739,65 @@ function TrendCard<T extends { month: IsoDate }>({
   )
 }
 
+/** Barras mensais lado a lado — uma por grupo comparado (região, canal do lead…). */
+function ComparisonBarCard<T extends { month: IsoDate }>({
+  title,
+  description,
+  data: points,
+  bars,
+  className,
+}: {
+  title: string
+  description: string
+  data: T[]
+  bars: { key: keyof T & string; label: string; color: string }[]
+  className?: string
+}) {
+  return (
+    <Card className={cn('p-4', className)}>
+      <h3 className="mb-1 text-sm font-medium">{title}</h3>
+      <p className="mb-2 text-xs text-muted-foreground">{description}</p>
+      <Legend items={bars.map(({ label, color }) => ({ label, color }))} />
+      <div className="mt-2 h-[220px]">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={points} margin={{ top: 8, right: 8, left: -8, bottom: 0 }} barGap={2}>
+            <CartesianGrid strokeDasharray="3 3" stroke={chartColor('border')} vertical={false} />
+            <XAxis
+              dataKey="month"
+              tickFormatter={formatMonthLabel}
+              tick={{ fontSize: 11, fill: SECONDARY }}
+              axisLine={false}
+              tickLine={false}
+            />
+            <YAxis
+              allowDecimals={false}
+              tick={{ fontSize: 11, fill: SECONDARY }}
+              axisLine={false}
+              tickLine={false}
+              width={36}
+            />
+            <RechartsTooltip
+              cursor={{ fill: 'hsl(var(--muted) / 0.4)' }}
+              content={<ChartTooltip formatter={(v) => formatNumber(v)} />}
+              labelFormatter={(label) => formatMonthLong(String(label))}
+            />
+            {bars.map((bar) => (
+              <Bar
+                key={bar.key}
+                dataKey={bar.key}
+                name={bar.label}
+                fill={bar.color}
+                radius={[4, 4, 0, 0]}
+                maxBarSize={22}
+              />
+            ))}
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </Card>
+  )
+}
+
 function BreakdownCard({
   title,
   rows,
@@ -840,6 +873,9 @@ function MeetingRow({
       </TableCell>
       <TableCell className="hidden text-muted-foreground sm:table-cell">
         {meeting.region ? MEETING_REGION_LABEL[meeting.region] : '—'}
+      </TableCell>
+      <TableCell className="hidden text-muted-foreground sm:table-cell">
+        {meeting.leadChannel ? MEETING_LEAD_CHANNEL_LABEL[meeting.leadChannel] : '—'}
       </TableCell>
       <TableCell className="hidden max-w-[200px] truncate text-muted-foreground md:table-cell">
         {meeting.product ? SALE_PRODUCT_LABEL[meeting.product] : null}

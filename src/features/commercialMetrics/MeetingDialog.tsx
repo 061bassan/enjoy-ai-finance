@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import { data } from '@/data'
 import {
   LEAD_SOURCE_LABEL,
+  MEETING_LEAD_CHANNEL_LABEL,
   MEETING_REGION_LABEL,
   MEETING_STATUS_LABEL,
   SALE_PRODUCT_LABEL,
@@ -11,6 +12,7 @@ import {
 import type {
   CommercialMeeting,
   LeadSource,
+  MeetingLeadChannel,
   MeetingRegion,
   MeetingStatus,
   Sale,
@@ -96,6 +98,8 @@ export function MeetingDialog({
   // Sem padrão: é o dado da comparação Brasília × Brasil, então a reunião nova
   // só salva com a região escolhida de propósito.
   const [region, setRegion] = React.useState<MeetingRegion | null>(null)
+  // Idem para LP × WhatsApp: sem padrão, para não inflar um dos canais.
+  const [leadChannel, setLeadChannel] = React.useState<MeetingLeadChannel | null>(null)
   const [saleId, setSaleId] = React.useState<string>(AUTO)
   const [notes, setNotes] = React.useState('')
 
@@ -110,6 +114,7 @@ export function MeetingDialog({
     setCreative(meeting?.creative ?? '')
     setSource(meeting?.source ?? 'trafego_pago')
     setRegion(meeting?.region ?? null)
+    setLeadChannel(meeting?.leadChannel ?? null)
     setSaleId(meeting?.saleId ?? AUTO)
     setNotes(meeting?.notes ?? '')
   }, [open, meeting, defaultDate])
@@ -139,6 +144,11 @@ export function MeetingDialog({
       toast.error('Informe se o lead é de Brasília ou do Brasil.')
       return
     }
+    // Lead do tráfego sempre chega por LP ou WhatsApp; indicação pode não ter canal.
+    if (!meeting && source === 'trafego_pago' && !leadChannel) {
+      toast.error('Informe se o lead veio da LP ou do WhatsApp.')
+      return
+    }
 
     const fields = {
       date,
@@ -150,6 +160,7 @@ export function MeetingDialog({
       creative: creative.trim() || null,
       source,
       region,
+      leadChannel,
       saleId: saleId === AUTO ? null : saleId,
       notes: notes.trim() || null,
     }
@@ -306,7 +317,28 @@ export function MeetingDialog({
               </p>
             </div>
 
-            <div className="space-y-1.5 sm:col-span-2">
+            <div className="space-y-1.5">
+              <span className="flex items-center gap-1">
+                <Label>Canal do lead</Label>
+                <LabelEditor group="meetingLeadChannel" />
+              </span>
+              <Select
+                value={leadChannel ?? ''}
+                onValueChange={(value) => setLeadChannel(value as MeetingLeadChannel)}
+              >
+                <SelectTrigger aria-label="Canal do lead">
+                  <SelectValue placeholder="LP ou WhatsApp?" />
+                </SelectTrigger>
+                <SelectContent>
+                  {optionsFrom(MEETING_LEAD_CHANNEL_LABEL).map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
               <Label htmlFor="meeting-creative">
                 {source === 'trafego_pago'
                   ? 'Criativo que gerou a call'
