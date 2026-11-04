@@ -185,6 +185,13 @@ describe('commercialMetrics', () => {
 })
 
 describe('meetingBreakdown', () => {
+  it('não soma criativos que só diferem pelo número', () => {
+    const a = meeting('2026-09-03', 'Sthefany', { creative: 'Criativo 1' })
+    const b = meeting('2026-09-03', 'Thiago', { creative: 'Criativo 2' })
+    const rows = meetingBreakdown([a, b], new Map(), (m) => m.creative)
+    expect(rows.map((row) => row.label).sort()).toEqual(['Criativo 1', 'Criativo 2'])
+  })
+
   it('junta o mesmo criativo escrito de jeitos diferentes', () => {
     const a = meeting('2026-09-03', 'Sthefany', { creative: 'depoimento rafaela' })
     const b = meeting('2026-09-03', 'Thiago', { creative: 'Depoimento Rafaela ' })

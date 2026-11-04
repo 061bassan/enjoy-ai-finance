@@ -1,7 +1,9 @@
 import * as React from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { data } from '@/data'
 import { applyLabelOverrides, type LabelGroup, type LabelOverrides } from '@/data/enums'
+import { EMPTY_CREATIVE_CATALOG, type CreativeCatalog } from '@/domain/creativeCatalog'
 import { useSession } from '@/app/session'
 import { useTheme } from '@/app/theme'
 import { defaultHidden, sectionKey } from './registry'
@@ -30,6 +32,9 @@ interface CustomizationContextValue {
   labels: LabelOverrides
   /** Renomeia uma etiqueta; `null` (ou texto vazio) volta ao padrão. */
   setLabel: (group: LabelGroup, value: string, text: string | null) => void
+  /** Criativos adicionados e retirados da lista do cadastro de reunião. */
+  creativeCatalog: CreativeCatalog
+  updateCreativeCatalog: (update: (catalog: CreativeCatalog) => CreativeCatalog) => void
   /** Falso enquanto a preferência ainda não chegou do banco. */
   ready: boolean
   saving: boolean
@@ -61,10 +66,21 @@ export function CustomizationProvider({ children }: { children: React.ReactNode 
     },
   })
 
+  const queryKey = ['customizations', workspaceId]
   const save = useMutation({
-    mutationFn: async (patch: Partial<Omit<Customization, keyof object>>) => {
+    // Em fila, cada escrita partindo da linha mais recente do cache. Sem isso,
+    // duas escritas seguidas partem da mesma cópia antiga: a segunda desfaz a
+    // primeira e, no primeiro uso do espaço, ambas tentam criar a linha.
+    scope: { id: 'customizations' },
+    mutationFn: async (
+      input:
+        | Partial<Omit<Customization, keyof object>>
+        | ((current: Customization | null) => Partial<Omit<Customization, keyof object>>),
+    ) => {
       if (!workspaceId) return null
-      if (row) return data.customizations.update(row.id, patch)
+      const current = queryClient.getQueryData<Customization | null>(queryKey) ?? row ?? null
+      const patch = typeof input === 'function' ? input(current) : input
+      if (current) return data.customizations.update(current.id, patch)
       return data.customizations.create({
         workspaceId,
         brand: DEFAULT_BRAND,
@@ -74,7 +90,9 @@ export function CustomizationProvider({ children }: { children: React.ReactNode 
         ...patch,
       } as Omit<Customization, 'id' | 'createdAt' | 'updatedAt'>)
     },
-    onSuccess: () => {
+    onSuccess: (saved) => {
+      // Já grava a linha salva: é dela que a próxima escrita da fila parte.
+      if (saved) queryClient.setQueryData(queryKey, saved)
       void queryClient.invalidateQueries({ queryKey: ['customizations'] })
     },
   })
@@ -136,6 +154,23 @@ export function CustomizationProvider({ children }: { children: React.ReactNode 
     [labels, save],
   )
 
+  const creativeCatalog = row?.labels?.meetingCreatives ?? EMPTY_CREATIVE_CATALOG
+
+  const updateCreativeCatalog = React.useCallback(
+    (update: (catalog: CreativeCatalog) => CreativeCatalog) => {
+      save.mutate(
+        (current) => ({
+          labels: {
+            ...current?.labels,
+            meetingCreatives: update(current?.labels?.meetingCreatives ?? EMPTY_CREATIVE_CATALOG),
+          },
+        }),
+        { onError: () => toast.error('Não foi possível salvar a lista de criativos.') },
+      )
+    },
+    [save],
+  )
+
   const setBrand = React.useCallback(
     (patch: Partial<BrandPrefs>) => {
       save.mutate({ brand: { ...brand, ...patch } })
@@ -184,6 +219,8 @@ export function CustomizationProvider({ children }: { children: React.ReactNode 
       resetAll,
       labels,
       setLabel,
+      creativeCatalog,
+      updateCreativeCatalog,
       ready: workspaceId == null || !isPending,
       saving: save.isPending,
     }),
@@ -197,6 +234,8 @@ export function CustomizationProvider({ children }: { children: React.ReactNode 
       resetAll,
       labels,
       setLabel,
+      creativeCatalog,
+      updateCreativeCatalog,
       workspaceId,
       isPending,
       save.isPending,

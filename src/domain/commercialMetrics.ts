@@ -29,6 +29,16 @@ import { activeSales, summarizeSales } from './sales'
 // Casamento reunião ↔ venda
 // ---------------------------------------------------------------------------
 
+/** "Depoimento  Rafaela-1" → "depoimento rafaela 1": mesma grafia, mesma chave. */
+export function normalizedLabel(label: string): string {
+  return label
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
 /** "Raphaela Souza" → ["raphaela", "souza"]: sem acento, sem pontuação, minúsculo. */
 export function nameTokens(name: string): string[] {
   return name
@@ -332,7 +342,9 @@ export function meetingBreakdown(
   for (const meeting of meetings) {
     const raw = (keyOf(meeting) ?? '').trim()
     const label = raw || 'Não informado'
-    const key = nameTokens(label).join(' ') || 'nao informado'
+    // Sem `nameTokens`: ele descarta tokens de um caractere, bom para casar nomes
+    // de pessoa, mas aqui somaria "Criativo 1" e "Criativo 2" na mesma linha.
+    const key = normalizedLabel(label) || 'nao informado'
     const row = groups.get(key) ?? {
       label,
       meetings: 0,

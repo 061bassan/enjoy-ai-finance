@@ -20,8 +20,10 @@ import type {
 } from '@/data/types'
 import { formatDate, type IsoDate } from '@/lib/date'
 import { formatMoney } from '@/lib/money'
-import { namesMatch } from '@/domain/commercialMetrics'
+import { isPaidTraffic, namesMatch } from '@/domain/commercialMetrics'
+import { creativeOptions } from '@/domain/creativeCatalog'
 import { useSession } from '@/app/session'
+import { useCustomization } from '@/customization/context'
 import { DateField } from '@/components/DateField'
 import { Button } from '@/components/ui/button'
 import {
@@ -43,6 +45,7 @@ import {
 } from '@/components/ui/select'
 import { useCreate, useUpdate } from '@/hooks/data'
 import { LabelEditor } from '@/components/LabelEditor'
+import { CreativeCatalogEditor } from './CreativeCatalogEditor'
 
 const AUTO = '__auto__'
 const NONE = '__none__'
@@ -83,6 +86,7 @@ export function MeetingDialog({
   defaultDate: IsoDate
 }) {
   const { session } = useSession()
+  const { creativeCatalog } = useCustomization()
   const create = useCreate('commercialMeetings', data.commercialMeetings)
   const update = useUpdate('commercialMeetings', data.commercialMeetings)
 
@@ -120,7 +124,18 @@ export function MeetingDialog({
   }, [open, meeting, defaultDate])
 
   const hosts = React.useMemo(() => distinctValues(meetings, (m) => m.hostName), [meetings])
-  const creatives = React.useMemo(() => distinctValues(meetings, (m) => m.creative), [meetings])
+  // O mesmo campo guarda o criativo (tráfego) e o detalhe das outras origens
+  // ("quem indicou"): cada origem sugere só o que é dela.
+  const usedCreatives = React.useMemo(
+    () => distinctValues(meetings.filter(isPaidTraffic), (m) => m.creative),
+    [meetings],
+  )
+  const otherDetails = React.useMemo(
+    () => distinctValues(meetings.filter((m) => !isPaidTraffic(m)), (m) => m.creative),
+    [meetings],
+  )
+  const creativeSuggestions =
+    source === 'trafego_pago' ? creativeOptions(usedCreatives, creativeCatalog) : otherDetails
   const sortedSales = React.useMemo(
     () => [...sales].sort((a, b) => b.saleDate.localeCompare(a.saleDate)),
     [sales],
@@ -339,13 +354,16 @@ export function MeetingDialog({
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="meeting-creative">
-                {source === 'trafego_pago'
-                  ? 'Criativo que gerou a call'
-                  : source === 'indicacao'
-                    ? 'Quem indicou'
-                    : 'Detalhe da origem'}
-              </Label>
+              <span className="flex items-center gap-1">
+                <Label htmlFor="meeting-creative">
+                  {source === 'trafego_pago'
+                    ? 'Criativo que gerou a call'
+                    : source === 'indicacao'
+                      ? 'Quem indicou'
+                      : 'Detalhe da origem'}
+                </Label>
+                {source === 'trafego_pago' && <CreativeCatalogEditor used={usedCreatives} />}
+              </span>
               <Input
                 id="meeting-creative"
                 list="meeting-creatives"
@@ -360,7 +378,7 @@ export function MeetingDialog({
                 }
               />
               <datalist id="meeting-creatives">
-                {creatives.map((item) => (
+                {creativeSuggestions.map((item) => (
                   <option key={item} value={item} />
                 ))}
               </datalist>
