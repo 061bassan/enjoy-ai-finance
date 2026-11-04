@@ -17,6 +17,7 @@
 
 import type { LabelOverrides } from '@/data/enums'
 import type { ScopedEntity } from '@/data/types'
+import type { CreativeCatalog } from '@/domain/creativeCatalog'
 
 /** Acentos disponíveis. O valor é o matiz HSL; a saturação vem da intensidade. */
 export type AccentName =
@@ -61,8 +62,12 @@ export interface Customization extends ScopedEntity {
   /**
    * Etiquetas renomeadas pelo time ("Perdida" → "Desistente"). Opcional: linha
    * antiga, sem a coluna, vale como "tudo no padrão".
+   *
+   * `meetingCreatives` mora neste mesmo jsonb para não exigir `alter table` no
+   * banco de produção; `applyLabelOverrides` só percorre os grupos de etiqueta e
+   * não enxerga esta chave.
    */
-  labels?: LabelOverrides
+  labels?: LabelOverrides & { meetingCreatives?: CreativeCatalog }
   /** Rotas removidas do menu lateral. */
   hiddenNav: string[]
 }
