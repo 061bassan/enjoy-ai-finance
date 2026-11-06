@@ -306,7 +306,19 @@ function MonthlyTargetDialog({
     event.preventDefault()
     if (!session) return
 
-    if (revenueCents === 0 && profitCents === 0 && salesCount === 0) {
+    // Todos os campos contam: quem só acompanha reuniões ou MRR também tem meta.
+    const filled = [
+      revenueCents,
+      profitCents,
+      mrrCents,
+      setupCents,
+      salesCount,
+      clientsCount,
+      meetingsCount,
+      proposalsCount,
+      marginPercent,
+    ].some((value) => value > 0)
+    if (!filled) {
       toast.error('Preencha ao menos uma meta.')
       return
     }

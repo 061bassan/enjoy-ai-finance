@@ -2,12 +2,10 @@ import {
   addDays,
   addMonths,
   differenceInCalendarDays,
-  endOfDay,
   endOfMonth,
   endOfYear,
   format,
   parseISO,
-  startOfDay,
   startOfMonth,
   startOfYear,
   subDays,
@@ -41,6 +39,11 @@ export function nowIso(): string {
 
 export function formatDate(iso: IsoDate): string {
   return format(fromIsoDate(iso), 'dd/MM/yyyy')
+}
+
+/** "09/11": para intervalos curtos, em que o ano só atrapalharia a leitura. */
+export function formatDayMonth(iso: IsoDate): string {
+  return format(fromIsoDate(iso), 'dd/MM')
 }
 
 export function formatDateLong(iso: IsoDate): string {
@@ -143,9 +146,7 @@ export {
   addDays,
   addMonths,
   differenceInCalendarDays,
-  endOfDay,
   endOfMonth,
-  startOfDay,
   startOfMonth,
   subMonths,
 }
