@@ -2,7 +2,7 @@ import * as React from 'react'
 import { Button } from '@/components/ui/button'
 
 /** Quantas linhas uma tabela mostra antes de pedir para continuar. */
-export const PAGE_SIZE = 100
+const PAGE_SIZE = 100
 
 /**
  * Lista longa em pedaços.

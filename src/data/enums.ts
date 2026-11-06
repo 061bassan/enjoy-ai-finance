@@ -14,7 +14,6 @@ import type {
   ClientStatus,
   CostCenter,
   Frequency,
-  GoalStatus,
   GoalType,
   LeadActivityKind,
   LeadSource,
@@ -31,7 +30,6 @@ import type {
   SaleProduct,
   SaleStatus,
   TransactionKind,
-  TransactionStatus,
 } from './types'
 
 export const ACCOUNT_TYPE_LABEL: Record<AccountType, string> = {
@@ -66,11 +64,6 @@ export const TRANSACTION_KIND_LABEL: Record<TransactionKind, string> = {
   income: 'Entrada',
   expense: 'Saída',
   transfer: 'Transferência',
-}
-
-export const TRANSACTION_STATUS_LABEL: Record<TransactionStatus, string> = {
-  pending: 'Pendente',
-  cleared: 'Compensada',
 }
 
 export const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
@@ -199,12 +192,6 @@ export const GOAL_TYPE_LABEL: Record<GoalType, string> = {
   savings: 'Acúmulo',
   reserve: 'Reserva',
   debt_payoff: 'Quitação de dívida',
-}
-
-export const GOAL_STATUS_LABEL: Record<GoalStatus, string> = {
-  active: 'Ativa',
-  reached: 'Atingida',
-  archived: 'Arquivada',
 }
 
 export const PURCHASE_STATUS_LABEL: Record<PurchaseStatus, string> = {

@@ -160,7 +160,7 @@ export function normalizeName(value: string): string {
 // ---------------------------------------------------------------------------
 
 /** Idade mínima aceita. 16 é o mínimo para vínculo formal de trabalho. */
-export const MINIMUM_AGE = 16
+const MINIMUM_AGE = 16
 
 export function ageOn(birthDate: IsoDate, reference: IsoDate = today()): number {
   const birth = fromIsoDate(birthDate)
@@ -191,7 +191,7 @@ export function validateBirthDate(value: string, reference: IsoDate = today()): 
 // Senha
 // ---------------------------------------------------------------------------
 
-export const MINIMUM_PASSWORD_LENGTH = 8
+const MINIMUM_PASSWORD_LENGTH = 8
 
 /**
  * Exigimos comprimento + letra + número, e nada além disso.

@@ -12,10 +12,11 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { AlertTriangle, CircleX, Target, TrendingUp, Trophy } from 'lucide-react'
+import { AlertTriangle, CalendarClock, CircleX, Target, TrendingUp, Trophy } from 'lucide-react'
 import {
   daysInRange,
   formatDate,
+  formatDayMonth,
   formatMonthLabel,
   formatMonthLong,
   monthKey,
@@ -25,7 +26,15 @@ import {
 } from '@/lib/date'
 import { formatMoney, formatMoneyCompact, formatNumber, formatPercent } from '@/lib/money'
 import type { MonthlyTarget } from '@/data/types'
-import { cumulativeSeries, goalPace, type GoalPace, type PaceStatus } from '@/domain/goals'
+import {
+  cumulativeSeries,
+  goalPace,
+  weeklyBreakdown,
+  weeksOfMonth,
+  type GoalPace,
+  type WeekProgress,
+  type WeekStatus,
+} from '@/domain/goals'
 import { chartColor } from '@/components/charts/primitives'
 import { EmptyState } from '@/components/PageHeader'
 import { Card } from '@/components/ui/card'
@@ -36,6 +45,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import { cn } from '@/lib/cn'
 import { useMonthlyTargets } from '@/hooks/data'
 import { useMonthActuals, type MonthActuals } from './monthActuals'
@@ -183,6 +200,7 @@ interface MetricView {
   current: number
   pace: GoalPace
   series: ReturnType<typeof cumulativeSeries> | null
+  weeks: WeekProgress[]
 }
 
 /**
@@ -229,6 +247,11 @@ export function GoalsDashboard() {
     }
     const monthTotal = actualsFor(range)
 
+    // Um realizado por semana, calculado uma vez e lido por todas as métricas.
+    const weekly = new Map(
+      weeksOfMonth(month).map((week) => [week.from, actualsFor({ from: week.from, to: week.to })]),
+    )
+
     return METRICS.filter((def) => target[def.target] > 0).map((def) => {
       const goal = target[def.target]
       const current = monthTotal[def.actual]
@@ -246,6 +269,13 @@ export function GoalsDashboard() {
         series: def.cumulative
           ? cumulativeSeries(days, goal, asOf, (day) => daily.get(day)?.[def.actual] ?? 0)
           : null,
+        weeks: weeklyBreakdown({
+          month,
+          target: goal,
+          asOf: now,
+          cumulative: def.cumulative,
+          valueFor: (week) => weekly.get(week.from)?.[def.actual] ?? 0,
+        }),
       }
     })
   }, [target, month, actualsFor])
@@ -321,6 +351,8 @@ export function GoalsDashboard() {
       </div>
 
       <PrimaryCard view={primary} history={history} isCurrentMonth={isCurrentMonth} />
+
+      <WeeklyCard view={primary} />
 
       {secondary.length > 0 && (
         <div>
@@ -595,12 +627,201 @@ function PrimaryCard({
 }
 
 // ---------------------------------------------------------------------------
+// Análise semanal
+// ---------------------------------------------------------------------------
+
+function weekLabel({ week }: WeekProgress) {
+  return `${formatDayMonth(week.from)} a ${formatDayMonth(week.to)}`
+}
+
+/**
+ * A meta do mês quebrada nas semanas, para a métrica principal.
+ *
+ * O mês inteiro só mostra o problema quando já é tarde. Olhando semana a semana
+ * dá para ver em qual delas o ritmo caiu, e a linha "para recuperar" responde a
+ * pergunta seguinte: quanto esta semana precisa fechar para o mês ainda dar certo.
+ */
+function WeeklyCard({ view }: { view: MetricView }) {
+  const { def, weeks } = view
+  const fmt = (value: number) => formatValue(def.format, value)
+  const fmtCompact = (value: number) => formatValue(def.format, value, true)
+
+  const closed = weeks.filter((row) => row.status === 'reached' || row.status === 'missed')
+  const reached = closed.filter((row) => row.status === 'reached').length
+  const current = weeks.find((row) => row.isCurrent)
+  const chartData = weeks.map((row) => ({
+    label: `Sem. ${row.week.number}`,
+    period: weekLabel(row),
+    realized: row.status === 'upcoming' ? null : row.current,
+    target: row.target,
+    upcoming: row.status === 'upcoming',
+    isCurrent: row.isCurrent,
+  }))
+
+  return (
+    <Card className="p-4 sm:p-5">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Meta por semana
+          </p>
+          <h2 className="text-lg font-semibold">{def.label}</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {def.cumulative
+              ? 'A meta do mês dividida pelos dias de cada semana, de segunda a domingo.'
+              : `${def.label} é uma razão: a mesma meta vale para todas as semanas.`}
+          </p>
+        </div>
+        {closed.length > 0 && (
+          <span className="rounded-md bg-muted/50 px-3 py-1.5 text-sm tabular-nums">
+            {reached} de {closed.length} {closed.length === 1 ? 'semana batida' : 'semanas batidas'}
+          </span>
+        )}
+      </div>
+
+      {current?.catchUpTarget != null &&
+        current.status !== 'reached' &&
+        current.catchUpTarget !== current.target && (
+          <p className="mb-4 flex items-start gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+            <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+            <span>
+              {current.catchUpTarget > current.target ? (
+                <>
+                  Para o mês ainda bater a meta, esta semana precisa fechar em{' '}
+                  <strong className="tabular-nums">{fmt(current.catchUpTarget)}</strong>, acima dos{' '}
+                  <span className="tabular-nums">{fmt(current.target)}</span> planejados, porque as
+                  semanas anteriores ficaram abaixo.
+                </>
+              ) : (
+                <>
+                  Com o que já entrou, esta semana precisa fechar em{' '}
+                  <strong className="tabular-nums">{fmt(current.catchUpTarget)}</strong> para o mês
+                  bater a meta. O planejado era{' '}
+                  <span className="tabular-nums">{fmt(current.target)}</span>.
+                </>
+              )}
+            </span>
+          </p>
+        )}
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
+        <figure className="min-w-0">
+          <figcaption className="mb-2">
+            <Legend
+              items={[
+                { label: 'Realizado', color: REALIZED },
+                { label: 'Meta da semana', color: REFERENCE, dashed: true },
+              ]}
+            />
+          </figcaption>
+          <div className="h-[220px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke={chartColor('border')}
+                  vertical={false}
+                />
+                <XAxis
+                  dataKey="label"
+                  tick={{ fontSize: 11, fill: REFERENCE }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  tickFormatter={fmtCompact}
+                  tick={{ fontSize: 11, fill: REFERENCE }}
+                  axisLine={false}
+                  tickLine={false}
+                  width={def.format === 'money' ? 72 : 36}
+                />
+                <RechartsTooltip
+                  cursor={{ fill: 'hsl(var(--muted) / 0.4)' }}
+                  content={<WeekTooltip format={fmt} />}
+                />
+                <Bar
+                  dataKey="realized"
+                  name="Realizado"
+                  fill={REALIZED}
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={44}
+                >
+                  {/* A semana em andamento fica mais clara: barra baixa ali não é
+                      resultado ruim, é semana que ainda não acabou. */}
+                  {chartData.map((point) => (
+                    <Cell key={point.label} fillOpacity={point.isCurrent ? 0.45 : 0.9} />
+                  ))}
+                </Bar>
+                <Line
+                  type="linear"
+                  dataKey="target"
+                  name="Meta da semana"
+                  stroke={REFERENCE}
+                  strokeWidth={1.5}
+                  strokeDasharray="4 4"
+                  dot={{
+                    r: 4,
+                    fill: 'hsl(var(--card))',
+                    stroke: REFERENCE,
+                    strokeWidth: 2,
+                    strokeDasharray: '0',
+                  }}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </figure>
+
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Semana</TableHead>
+              <TableHead className="text-right">Meta</TableHead>
+              <TableHead className="text-right">Realizado</TableHead>
+              <TableHead className="text-right">%</TableHead>
+              <TableHead>Situação</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {weeks.map((row) => (
+              <TableRow
+                key={row.week.from}
+                aria-current={row.isCurrent ? 'true' : undefined}
+                className={cn(row.isCurrent && 'bg-muted/40')}
+              >
+                <TableCell className="whitespace-nowrap">
+                  <span className="font-medium">{row.week.number}ª</span>
+                  <span className="ml-2 text-xs text-muted-foreground">{weekLabel(row)}</span>
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
+                  {fmt(row.target)}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
+                  {row.status === 'upcoming' ? '—' : fmt(row.current)}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {row.status === 'upcoming' || row.ratio == null ? '—' : formatPercent(row.ratio)}
+                </TableCell>
+                <TableCell>
+                  <StatusPill status={row.status} cumulative={def.cumulative} compact />
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Cartões secundários
 // ---------------------------------------------------------------------------
 
 function SecondaryCard({ view, onSelect }: { view: MetricView; onSelect: () => void }) {
   const { def, pace } = view
   const fmt = (value: number) => formatValue(def.format, value)
+  const thisWeek = view.weeks.find((row) => row.isCurrent)
 
   return (
     <button
@@ -629,6 +850,14 @@ function SecondaryCard({ view, onSelect }: { view: MetricView; onSelect: () => v
           <p className="truncate text-xs text-muted-foreground">de {fmt(view.target)}</p>
         </div>
       </div>
+
+      {thisWeek && (
+        <p className="mt-3 truncate text-xs text-muted-foreground">
+          Esta semana:{' '}
+          <span className="font-medium tabular-nums text-foreground">{fmt(thisWeek.current)}</span>{' '}
+          de {fmt(thisWeek.target)}
+        </p>
+      )}
 
       {view.series && (
         <div className="mt-3 h-12" aria-hidden>
@@ -755,13 +984,14 @@ function ProgressRing({
 }
 
 const STATUS: Record<
-  PaceStatus,
-  { label: string; icon: typeof Trophy; tone: 'positive' | 'negative' }
+  WeekStatus,
+  { label: string; icon: typeof Trophy; tone: 'positive' | 'negative' | 'neutral' }
 > = {
   reached: { label: 'Meta batida', icon: Trophy, tone: 'positive' },
   on_track: { label: 'No ritmo', icon: TrendingUp, tone: 'positive' },
   behind: { label: 'Abaixo do ritmo', icon: AlertTriangle, tone: 'negative' },
   missed: { label: 'Não atingida', icon: CircleX, tone: 'negative' },
+  upcoming: { label: 'Ainda não começou', icon: CalendarClock, tone: 'neutral' },
 }
 
 /** Status sempre com ícone e texto — a cor nunca carrega o significado sozinha. */
@@ -770,7 +1000,7 @@ function StatusPill({
   cumulative,
   compact = false,
 }: {
-  status: PaceStatus
+  status: WeekStatus
   cumulative: boolean
   compact?: boolean
 }) {
@@ -782,9 +1012,9 @@ function StatusPill({
       className={cn(
         'inline-flex shrink-0 items-center gap-1 rounded-full border font-medium',
         compact ? 'px-2 py-0.5 text-[11px]' : 'px-2.5 py-1 text-xs',
-        config.tone === 'positive'
-          ? 'border-positive/30 bg-positive/10 text-positive'
-          : 'border-negative/30 bg-negative/10 text-negative',
+        config.tone === 'positive' && 'border-positive/30 bg-positive/10 text-positive',
+        config.tone === 'negative' && 'border-negative/30 bg-negative/10 text-negative',
+        config.tone === 'neutral' && 'border-border bg-muted/50 text-muted-foreground',
       )}
     >
       <Icon className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} aria-hidden />
@@ -865,6 +1095,28 @@ function HistoryTooltip({
       <TooltipRow color={REALIZED} label="Realizado" value={format(point.realized)} />
       <TooltipRow color={REFERENCE} label="Meta" value={format(point.target)} dashed />
       <p className="mt-1 text-muted-foreground">{formatPercent(ratio)} da meta</p>
+    </div>
+  )
+}
+
+function WeekTooltip({
+  active,
+  payload,
+  format,
+}: TooltipProps<{ label: string; period: string; realized: number | null; target: number }>) {
+  const point = payload?.[0]?.payload
+  if (!active || !point) return null
+  return (
+    <div className="rounded-md border border-border bg-popover px-3 py-2 text-xs shadow-xl">
+      <p className="mb-1 font-medium">
+        {point.label} · {point.period}
+      </p>
+      <TooltipRow
+        color={REALIZED}
+        label="Realizado"
+        value={point.realized != null ? format(point.realized) : 'ainda não começou'}
+      />
+      <TooltipRow color={REFERENCE} label="Meta da semana" value={format(point.target)} dashed />
     </div>
   )
 }

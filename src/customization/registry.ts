@@ -11,7 +11,7 @@
  * do que deixar esconder e entregar uma tela inútil.
  */
 
-export interface CustomizableItem {
+interface CustomizableItem {
   id: string
   label: string
   /** Não pode ser ocultado — a tela perde o sentido sem ele. */

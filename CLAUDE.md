@@ -164,6 +164,12 @@ Funções sem I/O, sem React, sem data-de-hoje implícita (a data entra por par�
 `goals.ts` · `recurrence.ts` · `leads.ts` · `membership.ts` (o `money.ts` mora em
 `src/lib/`, não aqui — é utilitário de centavos, não regra de negócio).
 
+`goals.ts` também guarda a **análise semanal** (`weeklyBreakdown`), que parte da meta do mês
+e não grava nada (invariante 3). As semanas vão de segunda a domingo e sobra de 1 ou 2 dias
+nas pontas entra na semana vizinha (`weeksOfMonth`). A meta se divide pelos dias de cada
+semana, não por 4 (`splitTargetByWeeks`, invariante 9), a mesma reta do "ritmo ideal" do
+painel, e a soma das semanas sempre fecha na meta do mês.
+
 `marketing.ts` guarda as contas do investimento mensal: CPL, CAC de marketing, ROAS, ROI e
 a conciliação com o caixa. Três regras moram ali e explicam o resto: **o mês é indivisível**
 (verba não se rateia por dia — período parcial traz o mês inteiro), **lead de plataforma e
@@ -334,7 +340,7 @@ Poder decrescente: `owner` › `ceo` = `socio` › `admin` › `finance` › `sa
 | `/fluxo-de-caixa` | `features/cashflow/` | Previsto vs. realizado, capital de giro, runway |
 | `/a-receber` `/a-pagar` | `features/bills/` | Mesma página, prop `direction` |
 | `/recorrentes` | `features/recurring/` | Custo de operação mensal, títulos gerados sozinhos, contas parceladas, baixa automática opcional por regra (ver invariantes 22 e 23) |
-| `/metas` | `features/goals/` | Metas mensais + financeiras com projeção de data |
+| `/metas` | `features/goals/` | Metas mensais (com análise por semana) + financeiras com projeção de data |
 | `/compras` | `features/purchases/` | Metas de compra com "quando cabe no caixa" |
 | `/kanban` | `features/kanban/` | Soltar em "Pago" liquida o título e lança no caixa |
 | `/relatorios` | `features/reports/` | CSV (Excel pt-BR) e impressão/PDF |
@@ -536,6 +542,13 @@ Três coisas a lembrar:
   a mesma base em qualquer dispositivo, que é o que destrava o deploy de verdade. Sem
   `.env` (ou com `VITE_DATA_PROVIDER=local`) o app volta ao IndexedDB por dispositivo,
   útil para desenvolvimento offline.
+
+### Cabeçalhos de segurança
+
+`vercel.json` define CSP, `X-Frame-Options`, HSTS e afins em todas as respostas. A sessão do
+Supabase fica no `localStorage`, então a CSP é a barreira contra script injetado. **Passar a
+chamar um domínio novo (API, imagem, fonte) exige liberá-lo na CSP**, senão o navegador
+bloqueia em produção e o `npm run dev` não mostra, porque o Vite não aplica esses cabeçalhos.
 
 ### Keep-alive do Supabase
 

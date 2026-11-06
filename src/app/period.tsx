@@ -45,7 +45,7 @@ export const PERIOD_LABEL: Record<PeriodPreset, string> = {
   custom: 'Personalizado',
 }
 
-export function rangeForPreset(preset: PeriodPreset, reference = today()): DateRange {
+function rangeForPreset(preset: PeriodPreset, reference = today()): DateRange {
   switch (preset) {
     case 'today':
       return { from: reference, to: reference }

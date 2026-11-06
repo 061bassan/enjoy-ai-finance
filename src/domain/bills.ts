@@ -23,7 +23,7 @@ export interface BillView {
 }
 
 /** Quanto já foi baixado de um título. */
-export function paidAmount(payments: readonly BillPayment[]): Cents {
+function paidAmount(payments: readonly BillPayment[]): Cents {
   return sumCents(payments.map((p) => p.amountCents))
 }
 
@@ -47,7 +47,7 @@ export function resolveStatus(
 }
 
 /** Monta a visão completa de um título — o que as telas de AR/AP consomem. */
-export function toBillView(
+function toBillView(
   bill: Bill,
   payments: readonly BillPayment[],
   reference: IsoDate = today(),

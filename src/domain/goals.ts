@@ -1,4 +1,13 @@
-import { addMonths, fromIsoDate, toIsoDate, today, type IsoDate } from '@/lib/date'
+import {
+  addMonths,
+  daysInRange,
+  fromIsoDate,
+  rangeOfMonth,
+  toIsoDate,
+  today,
+  type DateRange,
+  type IsoDate,
+} from '@/lib/date'
 import { safeRatio, sumCents, type Cents } from '@/lib/money'
 import type { Goal, GoalContribution, PurchaseGoal } from '@/data/types'
 
@@ -251,7 +260,7 @@ export function monthlyTargetProgress(
 // Painel de metas — ritmo, projeção e curva acumulada do mês
 // ---------------------------------------------------------------------------
 
-export type PaceStatus = 'reached' | 'on_track' | 'behind' | 'missed'
+type PaceStatus = 'reached' | 'on_track' | 'behind' | 'missed'
 
 export interface GoalPace {
   /** Realizado ÷ meta (pode passar de 1). */
@@ -336,4 +345,153 @@ export function cumulativeSeries(
     // Sem arredondar: em metas pequenas (6 vendas) a reta viraria escada.
     ideal: total ? (target * (index + 1)) / total : 0,
   }))
+}
+
+// ---------------------------------------------------------------------------
+// Análise semanal: a meta do mês quebrada nas semanas do calendário
+// ---------------------------------------------------------------------------
+
+/** Pedaço de semana menor que isto não vira linha própria: entra na semana vizinha. */
+const MIN_WEEK_DAYS = 3
+
+export interface MonthWeek extends DateRange {
+  /** 1, 2, 3… na ordem do mês. */
+  number: number
+  days: number
+}
+
+/**
+ * As semanas de um mês, de segunda a domingo, sempre dentro do próprio mês.
+ *
+ * Um mês que começa num domingo teria uma "semana" de um dia só, cobrando uma
+ * meta impossível de avaliar e pintando de vermelho logo no dia 1. Sobra de
+ * 1 ou 2 dias nas pontas entra na semana cheia ao lado, e o mês fica com 4 ou
+ * 5 semanas.
+ */
+export function weeksOfMonth(reference: IsoDate): MonthWeek[] {
+  const groups: IsoDate[][] = []
+  for (const day of daysInRange(rangeOfMonth(reference))) {
+    const last = groups[groups.length - 1]
+    if (!last || fromIsoDate(day).getDay() === 1) groups.push([day])
+    else last.push(day)
+  }
+
+  const first = groups[0]
+  if (first && first.length < MIN_WEEK_DAYS) {
+    groups.shift()
+    groups[0]?.unshift(...first)
+  }
+  const last = groups[groups.length - 1]
+  if (last && last.length < MIN_WEEK_DAYS) {
+    groups.pop()
+    groups[groups.length - 1]?.push(...last)
+  }
+
+  return groups.map((days, index) => ({
+    number: index + 1,
+    from: days[0] ?? '',
+    to: days[days.length - 1] ?? '',
+    days: days.length,
+  }))
+}
+
+/**
+ * Divide a meta do mês entre as semanas, proporcional aos dias de cada uma.
+ *
+ * É a mesma reta do "ritmo ideal" do painel, não meta ÷ 4: mês não tem 4
+ * semanas (mesma razão de a recorrência semanal valer 52/12 por mês). Arredonda
+ * o ACUMULADO e tira a diferença, para o resultado continuar inteiro (centavos
+ * e vendas não têm fração) e a soma das semanas fechar exatamente na meta.
+ */
+export function splitTargetByWeeks(target: number, weeks: readonly MonthWeek[]): number[] {
+  const totalDays = weeks.reduce((sum, week) => sum + week.days, 0)
+  let elapsed = 0
+  let allocated = 0
+  return weeks.map((week) => {
+    elapsed += week.days
+    const accumulated = totalDays ? Math.round((target * elapsed) / totalDays) : 0
+    const share = accumulated - allocated
+    allocated = accumulated
+    return share
+  })
+}
+
+export type WeekStatus = PaceStatus | 'upcoming'
+
+export interface WeekProgress {
+  week: MonthWeek
+  target: number
+  current: number
+  /** Realizado ÷ meta da semana. `null` quando a parte da semana arredondou para zero. */
+  ratio: number | null
+  status: WeekStatus
+  /** A semana em que `asOf` cai. */
+  isCurrent: boolean
+  /**
+   * Quanto a semana atual precisa fechar para o mês ainda bater a meta, com o
+   * que faltou (ou sobrou) das semanas anteriores redistribuído nos dias que
+   * restam. Só na semana atual e só em métrica que acumula.
+   */
+  catchUpTarget: number | null
+}
+
+/**
+ * A meta do mês semana a semana, contra o realizado de cada uma.
+ *
+ * Métrica que não acumula (margem) não se divide: 35% de margem no mês é 35%
+ * em toda semana.
+ */
+export function weeklyBreakdown(input: {
+  month: IsoDate
+  target: number
+  asOf: IsoDate
+  cumulative: boolean
+  valueFor: (range: DateRange) => number
+}): WeekProgress[] {
+  const { month, target, asOf, cumulative, valueFor } = input
+  const weeks = weeksOfMonth(month)
+  const shares = cumulative ? splitTargetByWeeks(target, weeks) : weeks.map(() => target)
+
+  let realizedBefore = 0
+  let daysFromWeekStart = weeks.reduce((sum, week) => sum + week.days, 0)
+
+  return weeks.map((week, index) => {
+    const weekTarget = shares[index] ?? 0
+    const started = week.from <= asOf
+    const isCurrent = started && asOf <= week.to
+    const current = started ? valueFor(week) : 0
+
+    let status: WeekStatus = 'upcoming'
+    if (started && weekTarget > 0) {
+      status = goalPace({
+        current,
+        target: weekTarget,
+        elapsedDays: daysInRange({ from: week.from, to: week.to }).filter((day) => day <= asOf)
+          .length,
+        totalDays: week.days,
+        cumulative,
+      }).status
+    } else if (started) {
+      // Meta pequena pode não sobrar nada para a semana. Sem meta, não há como faltar.
+      status = week.to <= asOf ? 'reached' : 'on_track'
+    }
+
+    const catchUpTarget =
+      isCurrent && cumulative && daysFromWeekStart > 0
+        ? Math.round((Math.max(0, target - realizedBefore) * week.days) / daysFromWeekStart)
+        : null
+
+    realizedBefore += current
+    daysFromWeekStart -= week.days
+
+    return {
+      week,
+      target: weekTarget,
+      current,
+      ratio: weekTarget > 0 ? current / weekTarget : null,
+      status,
+      isCurrent,
+      catchUpTarget,
+    }
+  })
 }

@@ -16,12 +16,8 @@ export function activeSales(sales: readonly Sale[]): Sale[] {
   return sales.filter((sale) => sale.status !== 'cancelado')
 }
 
-export function salesInRange(sales: readonly Sale[], range: DateRange): Sale[] {
-  return sales.filter((sale) => isWithinRange(sale.saleDate, range))
-}
-
 /** Custo total de uma venda: a soma de todas as rubricas. */
-export function saleCostTotal(cost: SaleCost | undefined): Cents {
+function saleCostTotal(cost: SaleCost | undefined): Cents {
   if (!cost) return 0
   return (
     cost.adsCents +

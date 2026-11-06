@@ -10,7 +10,7 @@
 /** Marca de ordem de byte. Escrito como escape para não virar um caractere invisível no fonte. */
 const BOM = '\uFEFF'
 
-export type CsvValue = string | number | null | undefined
+type CsvValue = string | number | null | undefined
 
 export interface CsvColumn<T> {
   header: string
@@ -19,9 +19,18 @@ export interface CsvColumn<T> {
   money?: boolean
 }
 
+/**
+ * Excel e Sheets executam como fórmula qualquer célula de texto que comece com
+ * um destes caracteres. O nome de um cliente ou lead pode vir de fora (um
+ * formulário, uma planilha importada), e `=HYPERLINK(...)` no relatório vira um
+ * clique que manda dados para outro site. O apóstrofo força a célula a ser texto.
+ */
+const FORMULA_PREFIX = /^[=+\-@\t\r]/
+
 function escapeCell(value: string): string {
-  if (/[";\n\r]/.test(value)) return `"${value.replace(/"/g, '""')}"`
-  return value
+  const safe = FORMULA_PREFIX.test(value) ? `'${value}` : value
+  if (/[";\n\r]/.test(safe)) return `"${safe.replace(/"/g, '""')}"`
+  return safe
 }
 
 function formatCell(value: CsvValue, money: boolean): string {

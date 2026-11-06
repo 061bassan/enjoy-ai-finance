@@ -100,18 +100,3 @@ export function roleOnApproval(
 export function isFirstMember(existingMembers: readonly WorkspaceMember[]): boolean {
   return existingMembers.length === 0
 }
-
-/** Texto curto do desfecho, usado no histórico e no log de auditoria. */
-export function describeDecision(member: WorkspaceMember, roleLabel: (role: Role) => string): string {
-  if (member.status === 'active') {
-    const requested = member.requestedRole
-    if (requested && requested !== member.role) {
-      return `Aprovado como ${roleLabel(member.role)} (pediu ${roleLabel(requested)})`
-    }
-    return `Aprovado como ${roleLabel(member.role)}`
-  }
-  if (member.status === 'rejected') {
-    return member.decisionNote ? `Recusado — ${member.decisionNote}` : 'Recusado'
-  }
-  return ''
-}

@@ -19,10 +19,10 @@ import type { Cents } from '@/lib/money'
 import type { IsoDate } from '@/lib/date'
 
 export type Id = string
-export type Timestamp = string
+type Timestamp = string
 
 /** Campos que toda linha carrega. */
-export interface BaseEntity {
+interface BaseEntity {
   id: Id
   createdAt: Timestamp
   updatedAt: Timestamp
@@ -62,7 +62,7 @@ export interface Profile extends BaseEntity {
   passwordHash?: string | null
 }
 
-export type WorkspaceType = 'team' | 'personal'
+type WorkspaceType = 'team' | 'personal'
 
 export interface Workspace extends BaseEntity {
   name: string
@@ -176,7 +176,7 @@ export interface Category extends ScopedEntity {
 }
 
 export type TransactionKind = 'income' | 'expense' | 'transfer'
-export type TransactionStatus = 'pending' | 'cleared'
+type TransactionStatus = 'pending' | 'cleared'
 export type PaymentMethod =
   | 'pix'
   | 'boleto'
@@ -768,7 +768,7 @@ export interface MonthlyTarget extends ScopedEntity {
 }
 
 export type GoalType = 'savings' | 'reserve' | 'debt_payoff'
-export type GoalStatus = 'active' | 'reached' | 'archived'
+type GoalStatus = 'active' | 'reached' | 'archived'
 
 /** Meta financeira de acúmulo (reserva de emergência, caixa alvo). */
 export interface Goal extends ScopedEntity {
@@ -812,7 +812,7 @@ export interface PurchaseGoal extends ScopedEntity {
 // Kanban
 // ---------------------------------------------------------------------------
 
-export type BoardTemplate = 'bills' | 'approvals' | 'sales_pipeline' | 'custom'
+type BoardTemplate = 'bills' | 'approvals' | 'sales_pipeline' | 'custom'
 
 export interface Board extends ScopedEntity {
   name: string
@@ -833,7 +833,7 @@ export interface BoardColumn extends ScopedEntity {
   onDropAction?: 'none' | 'settle_bill' | 'mark_sale_paid' | null
 }
 
-export type CardLinkType = 'bill' | 'transaction' | 'sale' | 'purchase_goal'
+type CardLinkType = 'bill' | 'transaction' | 'sale' | 'purchase_goal'
 
 export interface Card extends ScopedEntity {
   boardId: Id
@@ -854,7 +854,7 @@ export interface Card extends ScopedEntity {
 // Auditoria
 // ---------------------------------------------------------------------------
 
-export type ActivityAction = 'create' | 'update' | 'delete' | 'settle' | 'move'
+type ActivityAction = 'create' | 'update' | 'delete' | 'settle' | 'move'
 
 export interface ActivityLog extends ScopedEntity {
   actorId: Id

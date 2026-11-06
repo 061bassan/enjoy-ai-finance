@@ -16,7 +16,7 @@ export function toSnake(key: string): string {
   return key.replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`)
 }
 
-export function toCamel(key: string): string {
+function toCamel(key: string): string {
   return key.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase())
 }
 
