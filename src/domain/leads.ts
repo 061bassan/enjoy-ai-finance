@@ -301,4 +301,3 @@ export function leadsBySource(leads: readonly Lead[]): LeadSourceStats[] {
     })
     .sort((a, b) => (b.conversion ?? -1) - (a.conversion ?? -1) || b.total - a.total)
 }
-

@@ -100,4 +100,3 @@ export function roleOnApproval(
 export function isFirstMember(existingMembers: readonly WorkspaceMember[]): boolean {
   return existingMembers.length === 0
 }
-

@@ -164,4 +164,3 @@ export function assignableRoles(role: Role | undefined): Role[] {
   if (role === 'ceo' || role === 'socio') return ['admin', 'finance', 'sales', 'viewer']
   return []
 }
-
