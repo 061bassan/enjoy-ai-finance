@@ -53,7 +53,7 @@ export interface BrandPrefs {
  * indicador novo aparecer sozinho para quem já personalizou — se guardássemos
  * a lista de visíveis, toda adição futura nasceria invisível para eles.
  */
-export type HiddenMap = Record<string, string[]>
+type HiddenMap = Record<string, string[]>
 
 export interface Customization extends ScopedEntity {
   brand: BrandPrefs

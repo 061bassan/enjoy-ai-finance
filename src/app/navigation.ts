@@ -22,7 +22,7 @@ import {
 } from 'lucide-react'
 import type { Permission } from '@/data/rules/permissions'
 
-export interface NavItem {
+interface NavItem {
   to: string
   label: string
   icon: LucideIcon

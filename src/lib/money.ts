@@ -43,12 +43,6 @@ export function formatMoneyCompact(cents: Cents): string {
   return BRL_COMPACT.format(cents / 100)
 }
 
-/** Formata com sinal explícito — usado em variações e lançamentos. */
-export function formatMoneySigned(cents: Cents): string {
-  const sign = cents > 0 ? '+' : cents < 0 ? '−' : ''
-  return `${sign}${BRL.format(Math.abs(cents) / 100)}`
-}
-
 /** Converte uma razão (0.1234) em percentual formatado ("12,3%"). */
 export function formatPercent(ratio: number): string {
   if (!Number.isFinite(ratio)) return '—'

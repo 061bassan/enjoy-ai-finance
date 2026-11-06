@@ -38,7 +38,7 @@ import type {
  * `[workspaceId+date]` é o índice composto mais usado: quase toda tela
  * filtra por workspace e período ao mesmo tempo.
  */
-export class EnjoyDatabase extends Dexie {
+class EnjoyDatabase extends Dexie {
   profiles!: EntityTable<Profile, 'id'>
   workspaces!: EntityTable<Workspace, 'id'>
   members!: EntityTable<WorkspaceMember, 'id'>

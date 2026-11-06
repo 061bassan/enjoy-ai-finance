@@ -10,7 +10,7 @@ import { defaultHidden, sectionKey } from './registry'
 import { brandCssVars, MANAGED_VARS } from './theme'
 import type { BrandPrefs, Customization } from './types'
 
-export const DEFAULT_BRAND: BrandPrefs = {
+const DEFAULT_BRAND: BrandPrefs = {
   accent: 'grafite',
   intensity: 'equilibrado',
   corners: 'suave',

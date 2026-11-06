@@ -144,7 +144,7 @@ export function matchMeetingsToSales(
 // ---------------------------------------------------------------------------
 
 /** Call que de fato aconteceu: tudo menos agendada e no-show. */
-export function meetingHappened(meeting: CommercialMeeting): boolean {
+function meetingHappened(meeting: CommercialMeeting): boolean {
   return meeting.status !== 'agendada' && meeting.status !== 'no_show'
 }
 

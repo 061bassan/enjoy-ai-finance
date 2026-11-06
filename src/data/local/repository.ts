@@ -1,7 +1,7 @@
 import type { EntityTable, Table } from 'dexie'
 import { nowIso } from '@/lib/date'
 import type { Id } from '../types'
-import type { ListQuery, NewEntity, PatchEntity, Repository } from '../contracts'
+import type { ListQuery,   Repository } from '../contracts'
 import { DATE_FIELD, type TableName } from './db'
 
 export function newId(): Id {
@@ -124,10 +124,4 @@ export function createRepository<T extends WithId>(
   }
 }
 
-/** Aplica os campos gerados sem passar pelo repositório (usado no seed). */
-export function stamp<T>(data: NewEntity<T>, id: Id = newId()): T {
-  const now = nowIso()
-  return { ...data, id, createdAt: now, updatedAt: now } as unknown as T
-}
 
-export type { NewEntity, PatchEntity }

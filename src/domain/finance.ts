@@ -15,11 +15,11 @@ import type { Account, Category, CostCenter, Transaction } from '@/data/types'
  * despesa e destruiria a margem. Elas só afetam o saldo por conta.
  */
 
-export function isRevenue(t: Transaction): boolean {
+function isRevenue(t: Transaction): boolean {
   return t.kind === 'income'
 }
 
-export function isExpense(t: Transaction): boolean {
+function isExpense(t: Transaction): boolean {
   return t.kind === 'expense'
 }
 
@@ -155,27 +155,6 @@ function toGrouped(
     .sort((a, b) => b.totalCents - a.totalCents)
 }
 
-/** Despesas agrupadas por categoria. */
-export function expensesByCategory(
-  transactions: readonly Transaction[],
-  categories: readonly Category[],
-): GroupedAmount[] {
-  const names = new Map(categories.map((c) => [c.id, c.name]))
-  const buckets = new Map<string, { label: string; total: Cents; count: number }>()
-
-  for (const t of transactions) {
-    if (!isExpense(t)) continue
-    const key = t.categoryId ?? 'sem-categoria'
-    const label = t.categoryId ? (names.get(t.categoryId) ?? 'Categoria removida') : 'Sem categoria'
-    const bucket = buckets.get(key) ?? { label, total: 0, count: 0 }
-    bucket.total += t.amountCents
-    bucket.count += 1
-    buckets.set(key, bucket)
-  }
-
-  return toGrouped(buckets)
-}
-
 /** Despesas agrupadas por centro de custo — o relatório pedido pelos sócios. */
 export function expensesByCostCenter(
   transactions: readonly Transaction[],
@@ -261,45 +240,6 @@ export function monthlySeries(
       expenseCents: bucket.expense,
       profitCents: profit,
       cumulativeProfitCents: cumulative,
-    }
-  })
-}
-
-export interface DailyBalancePoint {
-  date: IsoDate
-  inflowCents: Cents
-  outflowCents: Cents
-  netCents: Cents
-  balanceCents: Cents
-}
-
-/** Saldo dia a dia, partindo de um saldo inicial. */
-export function dailyBalanceSeries(
-  transactions: readonly Transaction[],
-  days: readonly IsoDate[],
-  openingBalanceCents: Cents,
-): DailyBalancePoint[] {
-  const byDay = new Map<IsoDate, { inflow: Cents; outflow: Cents }>()
-
-  for (const t of transactions) {
-    if (t.kind === 'transfer') continue
-    const bucket = byDay.get(t.date) ?? { inflow: 0, outflow: 0 }
-    if (t.kind === 'income') bucket.inflow += t.amountCents
-    else bucket.outflow += t.amountCents
-    byDay.set(t.date, bucket)
-  }
-
-  let balance = openingBalanceCents
-  return days.map((date) => {
-    const bucket = byDay.get(date) ?? { inflow: 0, outflow: 0 }
-    const net = bucket.inflow - bucket.outflow
-    balance += net
-    return {
-      date,
-      inflowCents: bucket.inflow,
-      outflowCents: bucket.outflow,
-      netCents: net,
-      balanceCents: balance,
     }
   })
 }

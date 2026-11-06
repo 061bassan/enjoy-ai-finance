@@ -2,7 +2,6 @@ import { daysOverdue, isWithinRange, today, type DateRange, type IsoDate } from 
 import { safeRatio, sumCents, type Cents } from '@/lib/money'
 import {
   OPEN_LEAD_STAGES,
-  type Id,
   type Lead,
   type LeadSource,
   type LeadStage,
@@ -37,7 +36,7 @@ export function leadsInPeriod(leads: readonly Lead[], range: DateRange): Lead[] 
   return leads.filter((lead) => isWithinRange(lead.enteredAt, range))
 }
 
-export function isOpen(lead: Lead): boolean {
+function isOpen(lead: Lead): boolean {
   return OPEN_LEAD_STAGES.includes(lead.stage)
 }
 
@@ -45,11 +44,11 @@ export function openLeads(leads: readonly Lead[]): Lead[] {
   return leads.filter(isOpen)
 }
 
-export function wonLeads(leads: readonly Lead[]): Lead[] {
+function wonLeads(leads: readonly Lead[]): Lead[] {
   return leads.filter((lead) => lead.stage === 'ganho')
 }
 
-export function lostLeads(leads: readonly Lead[]): Lead[] {
+function lostLeads(leads: readonly Lead[]): Lead[] {
   return leads.filter((lead) => lead.stage === 'perdido')
 }
 
@@ -57,7 +56,7 @@ export function lostLeads(leads: readonly Lead[]): Lead[] {
 // A métrica central: conversão de lead em venda
 // ---------------------------------------------------------------------------
 
-export type ConversionOrigin = 'crm' | 'diario' | 'indisponivel'
+type ConversionOrigin = 'crm' | 'diario' | 'indisponivel'
 
 export interface ConversionRate {
   /** Razão (0.12 = 12%). `null` quando não há leads no período. */
@@ -214,7 +213,7 @@ function daysBetween(from: IsoDate, to: IsoDate): number {
 // ---------------------------------------------------------------------------
 
 /** Depois de quantos dias sem toque um lead é considerado esquecido. */
-export const STALE_AFTER_DAYS = 7
+const STALE_AFTER_DAYS = 7
 
 export interface LeadAttention {
   lead: Lead
@@ -303,57 +302,3 @@ export function leadsBySource(leads: readonly Lead[]): LeadSourceStats[] {
     .sort((a, b) => (b.conversion ?? -1) - (a.conversion ?? -1) || b.total - a.total)
 }
 
-export interface LeadOwnerStats {
-  ownerId: Id | null
-  total: number
-  open: number
-  won: number
-  conversion: number | null
-  pipelineCents: Cents
-}
-
-export function leadsByOwner(leads: readonly Lead[]): LeadOwnerStats[] {
-  const buckets = new Map<string, Lead[]>()
-
-  for (const lead of leads) {
-    const key = lead.ownerId ?? ''
-    const bucket = buckets.get(key) ?? []
-    bucket.push(lead)
-    buckets.set(key, bucket)
-  }
-
-  return [...buckets.entries()]
-    .map(([ownerId, group]) => {
-      const won = wonLeads(group).length
-      return {
-        ownerId: ownerId || null,
-        total: group.length,
-        open: openLeads(group).length,
-        won,
-        conversion: safeRatio(won, group.length),
-        pipelineCents: sumCents(openLeads(group).map((lead) => lead.estimatedValueCents)),
-      }
-    })
-    .sort((a, b) => b.won - a.won || b.total - a.total)
-}
-
-/** Série diária de entradas e ganhos — alimenta o gráfico de evolução. */
-export function leadSeries(leads: readonly Lead[]) {
-  const byDay = new Map<IsoDate, { entered: number; won: number; lost: number }>()
-
-  const bump = (date: IsoDate, field: 'entered' | 'won' | 'lost') => {
-    const bucket = byDay.get(date) ?? { entered: 0, won: 0, lost: 0 }
-    bucket[field] += 1
-    byDay.set(date, bucket)
-  }
-
-  for (const lead of leads) {
-    bump(lead.enteredAt, 'entered')
-    if (lead.closedAt && lead.stage === 'ganho') bump(lead.closedAt, 'won')
-    if (lead.closedAt && lead.stage === 'perdido') bump(lead.closedAt, 'lost')
-  }
-
-  return [...byDay.entries()]
-    .map(([date, counts]) => ({ date, ...counts }))
-    .sort((a, b) => a.date.localeCompare(b.date))
-}

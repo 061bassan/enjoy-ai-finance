@@ -122,7 +122,7 @@ const SOCIO: Permission[] = CEO
 /** `owner` (rótulo "Desenvolvedor") = CEO + a única tecla destrutiva. */
 const OWNER: Permission[] = [...CEO, 'delete:workspace']
 
-export const PERMISSIONS: Record<Role, readonly Permission[]> = {
+const PERMISSIONS: Record<Role, readonly Permission[]> = {
   owner: OWNER,
   ceo: CEO,
   socio: SOCIO,
@@ -150,11 +150,6 @@ export function canManageLead(role: Role | undefined, isOwnLead: boolean): boole
   return isOwnLead && can(role, 'manage:leads:own')
 }
 
-/** Enxerga o funil inteiro, ou só a própria carteira? */
-export function canSeeAllLeads(role: Role | undefined): boolean {
-  return can(role, 'view:leads:all')
-}
-
 /**
  * Papéis que um usuário com este papel pode atribuir a outra pessoa.
  *
@@ -170,7 +165,3 @@ export function assignableRoles(role: Role | undefined): Role[] {
   return []
 }
 
-/** Papéis que não devem ver o custo da empresa nem o dashboard executivo. */
-export function isRestrictedRole(role: Role): boolean {
-  return role === 'sales' || role === 'viewer'
-}

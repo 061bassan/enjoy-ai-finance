@@ -23,8 +23,6 @@ export const AUTH_ERROR = {
   noAccess: 'NO_ACCESS',
 } as const
 
-export type AuthErrorCode = (typeof AUTH_ERROR)[keyof typeof AUTH_ERROR]
-
 export class AuthError extends Error {
   constructor(
     public readonly code: string,
