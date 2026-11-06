@@ -492,6 +492,7 @@ function PrimaryCard({
                       axisLine={false}
                       tickLine={false}
                       width={def.format === 'money' ? 72 : 36}
+                      allowDecimals={def.format !== 'number'}
                       // A meta sempre cabe no eixo (é a linha que se quer alcançar), e o
                       // lucro negativo do começo do mês também.
                       domain={[
@@ -572,6 +573,7 @@ function PrimaryCard({
                       axisLine={false}
                       tickLine={false}
                       width={def.format === 'money' ? 72 : 36}
+                      allowDecimals={def.format !== 'number'}
                     />
                     <RechartsTooltip
                       cursor={{ fill: 'hsl(var(--muted) / 0.4)' }}
@@ -734,6 +736,7 @@ function WeeklyCard({ view }: { view: MetricView }) {
                   axisLine={false}
                   tickLine={false}
                   width={def.format === 'money' ? 72 : 36}
+                  allowDecimals={def.format !== 'number'}
                 />
                 <RechartsTooltip
                   cursor={{ fill: 'hsl(var(--muted) / 0.4)' }}
