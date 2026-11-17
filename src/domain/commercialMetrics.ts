@@ -1,7 +1,7 @@
 import { differenceInCalendarDays } from 'date-fns'
 import { fromIsoDate, isWithinRange, type DateRange, type IsoDate } from '@/lib/date'
 import { safeRatio, type Cents } from '@/lib/money'
-import type { CommercialMeeting, Lead, MarketingEntry, Sale } from '@/data/types'
+import type { CommercialMeeting, CrmLeadDay, Lead, MarketingEntry, Sale } from '@/data/types'
 import {
   entriesInPeriod,
   resolveLeadCount,
@@ -212,6 +212,18 @@ export interface CommercialMetrics {
   lpMeetings: number
   whatsappMeetings: number
 
+  /**
+   * Leads qualificados (MQL) no CRM, por safra: leads reais que ENTRARAM no
+   * período e foram marcados como qualificados. `null` = CRM indisponível.
+   */
+  mqls: number | null
+  /** Leads reais do CRM no período — a base da taxa de qualificação. */
+  crmRealLeads: number | null
+  /** MQL ÷ leads reais do CRM. */
+  qualificationRate: number | null
+  /** Investimento em anúncios ÷ MQL. */
+  costPerMqlCents: Cents | null
+
   /** Reuniões do tráfego ÷ leads — a "win rate reuniões" da planilha. */
   schedulingRate: number | null
   /** Vendas do tráfego ÷ leads — a "win rate (venda/lead)" da planilha. */
@@ -237,6 +249,8 @@ export function commercialMetrics(input: {
   crmLeads: readonly Lead[]
   /** Casamento calculado sobre TODAS as reuniões — ver `matchMeetingsToSales`. */
   matches: ReadonlyMap<string, Sale>
+  /** Funil diário do CRM (`enjoy-crm`). Ausente ou `null` = indisponível. */
+  crmFunnel?: readonly CrmLeadDay[] | null
 }): CommercialMetrics {
   const { range, matches } = input
   const meetings = input.meetings.filter((meeting) => isWithinRange(meeting.date, range))
@@ -275,6 +289,12 @@ export function commercialMetrics(input: {
   const ads = marketing.adsCents
   const perUnit = (count: number) => (ads > 0 && count > 0 ? Math.round(ads / count) : null)
 
+  const crmDays = input.crmFunnel
+    ? input.crmFunnel.filter((row) => isWithinRange(row.day, range))
+    : null
+  const mqls = crmDays ? crmDays.reduce((sum, row) => sum + row.qualified, 0) : null
+  const crmRealLeads = crmDays ? crmDays.reduce((sum, row) => sum + row.realLeads, 0) : null
+
   return {
     leads: leadCount,
     leadsOrigin: origin,
@@ -297,6 +317,10 @@ export function commercialMetrics(input: {
     brasilMeetings: meetings.filter((meeting) => meeting.region === 'brasil').length,
     lpMeetings: meetings.filter((meeting) => meeting.leadChannel === 'lp').length,
     whatsappMeetings: meetings.filter((meeting) => meeting.leadChannel === 'whatsapp').length,
+    mqls,
+    crmRealLeads,
+    qualificationRate: mqls != null && crmRealLeads != null ? safeRatio(mqls, crmRealLeads) : null,
+    costPerMqlCents: mqls != null ? perUnit(mqls) : null,
     // Mês sem reunião registrada não é "0% de agendamento" — é mês sem dado.
     // Tudo que divide por lead ou por verba usa SÓ o tráfego pago.
     schedulingRate: meetings.length ? safeRatio(paid.length, leadCount) : null,

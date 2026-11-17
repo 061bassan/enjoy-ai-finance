@@ -22,6 +22,7 @@ import type {
   Client,
   CommercialDay,
   CommercialMeeting,
+  CrmLeadDay,
   Goal,
   GoalContribution,
   Id,
@@ -317,12 +318,26 @@ export interface Operations {
   importWorkspace(payload: Record<string, unknown>): Promise<void>
 }
 
+/**
+ * Ponte de LEITURA com o CRM (`enjoy-crm`, schema `crm` do mesmo Supabase).
+ *
+ * `null` = indisponível (provider local, função ainda não aplicada, sem
+ * permissão). A tela mostra "—" em vez de zero: zero seria afirmar que
+ * nenhum lead foi qualificado.
+ */
+export interface CrmBridge {
+  /** `from`/`to` em "YYYY-MM-DD", inclusivos. */
+  leadFunnel(input: { workspaceId: Id; from: string; to: string }): Promise<CrmLeadDay[] | null>
+}
+
 /** O provider completo. `src/data/index.ts` escolhe qual instanciar. */
 export interface DataProvider {
   readonly kind: 'local' | 'supabase'
 
   auth: AuthGateway
   ops: Operations
+  /** Leitura do funil do CRM — MQL e custo por MQL em Métricas comerciais. */
+  crm: CrmBridge
 
   profiles: Repository<Profile>
   workspaces: Repository<Workspace>

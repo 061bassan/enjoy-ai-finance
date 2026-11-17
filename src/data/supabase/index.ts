@@ -31,6 +31,7 @@ import { getSupabaseClient } from './client'
 import { createSupabaseRepository } from './repository'
 import { SupabaseAuth } from './auth'
 import { SupabaseOperations } from './operations'
+import { createCrmBridge } from './crm'
 
 /**
  * Monta o `DataProvider` do Supabase — o espelho do `createLocalProvider`.
@@ -53,6 +54,7 @@ export function createSupabaseProvider(): DataProvider {
 
     auth: new SupabaseAuth(client),
     ops: new SupabaseOperations(client),
+    crm: createCrmBridge(client),
 
     // Lê da view que mascara o PII (CPF/telefone/nascimento) para quem não é
     // gatekeeper; escreve na tabela-base (cada um edita o seu). Ver 0010.

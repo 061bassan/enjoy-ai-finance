@@ -59,6 +59,8 @@ export function createLocalProvider(): DataProvider {
 
     auth: new LocalAuth(),
     ops: new LocalOperations(),
+    // O CRM só existe no Supabase: offline não há funil de MQL para ler.
+    crm: { leadFunnel: async () => null },
 
     profiles: createProfileRepository(),
     workspaces: createRepository(db.workspaces, 'workspaces', { scoped: false }),
