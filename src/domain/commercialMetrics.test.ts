@@ -182,6 +182,37 @@ describe('commercialMetrics', () => {
     expect(empty.schedulingRate).toBeNull()
     expect(empty.cplCents).toBeNull()
   })
+
+  it('MQL vem do funil do CRM, só dos dias do mês; custo por MQL usa a verba de anúncio', () => {
+    const base = {
+      range,
+      meetings: [],
+      sales: [],
+      marketingEntries: [julyAds],
+      crmLeads: [],
+      matches: new Map(),
+    }
+    const crmFunnel = [
+      { day: '2026-06-30', leads: 9, realLeads: 9, qualified: 9 },
+      { day: '2026-07-02', leads: 12, realLeads: 10, qualified: 4 },
+      { day: '2026-07-31', leads: 8, realLeads: 8, qualified: 2 },
+    ]
+    const m = commercialMetrics({ ...base, crmFunnel })
+    expect(m.mqls).toBe(6)
+    expect(m.crmRealLeads).toBe(18)
+    expect(m.qualificationRate).toBeCloseTo(6 / 18)
+    expect(m.costPerMqlCents).toBe(Math.round(184_200 / 6))
+
+    // CRM fora do ar: indisponível, não zero.
+    const off = commercialMetrics({ ...base, crmFunnel: null })
+    expect(off.mqls).toBeNull()
+    expect(off.costPerMqlCents).toBeNull()
+
+    // CRM respondeu sem qualificados: 0 MQL e custo sem base.
+    const none = commercialMetrics({ ...base, crmFunnel: [] })
+    expect(none.mqls).toBe(0)
+    expect(none.costPerMqlCents).toBeNull()
+  })
 })
 
 describe('meetingBreakdown', () => {
