@@ -566,7 +566,7 @@ function MetricTiles({
         secondary={current.adsCents ? `${formatMoney(current.adsCents)} em anúncios` : undefined}
       />
       <KpiCard
-        label="Leads qualificados (MQL)"
+        label="MQL"
         value={current.mqls == null ? '—' : formatNumber(current.mqls)}
         variation={variation(current.mqls, previous?.mqls)}
         secondary={
