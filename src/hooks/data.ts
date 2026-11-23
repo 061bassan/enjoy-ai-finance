@@ -127,6 +127,23 @@ export const useMarketingEntries = () =>
   useCollection<MarketingEntry>('marketingEntries', data.marketingEntries)
 
 /**
+ * Funil de leads do CRM (MQL), dia a dia, no intervalo pedido.
+ *
+ * `data === null` = CRM indisponível — diferente de lista vazia, que é "o CRM
+ * respondeu e não houve lead". Recarrega ao voltar para a aba: a qualificação
+ * acontece no CRM, fora do alcance da invalidação deste app.
+ */
+export function useCrmLeadFunnel(from: string, to: string) {
+  const workspaceId = useWorkspaceId()
+  return useQuery({
+    queryKey: ['crmLeadFunnel', workspaceId, from, to],
+    queryFn: () => data.crm.leadFunnel({ workspaceId, from, to }),
+    staleTime: 60_000,
+    refetchOnWindowFocus: true,
+  })
+}
+
+/**
  * Leads.
  *
  * Sem filtro de período por padrão: um lead aberto há três meses continua

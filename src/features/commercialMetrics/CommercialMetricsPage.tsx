@@ -34,11 +34,14 @@ import {
   formatDate,
   formatMonthLabel,
   formatMonthLong,
+  fromIsoDate,
   monthKey,
   rangeOfMonth,
+  toIsoDate,
   today,
   type IsoDate,
 } from '@/lib/date'
+import { subMonths } from 'date-fns'
 import { formatMoney, formatMoneyCompact, formatNumber, formatPercent } from '@/lib/money'
 import { cn } from '@/lib/cn'
 import {
@@ -82,6 +85,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   useCommercialMeetings,
+  useCrmLeadFunnel,
   useLeads,
   useMarketingEntries,
   useRemove,
@@ -145,6 +149,12 @@ export function CommercialMetricsPage() {
   // fruto de uma call de setembro, e cada venda só pode ser contada uma vez.
   const matches = React.useMemo(() => matchMeetingsToSales(meetings, sales), [meetings, sales])
 
+  // MQL vem do CRM. Um pedido só cobre todos os meses do seletor (no máximo
+  // 30 para trás) — lead qualificado não existe no futuro, então vai até hoje.
+  const crmEarliest = toIsoDate(subMonths(fromIsoDate(currentMonth), 30))
+  const crmFrom = months[0]! > crmEarliest ? months[0]! : crmEarliest
+  const { data: crmFunnel = null } = useCrmLeadFunnel(crmFrom, rangeOfMonth(currentMonth).to)
+
   const metricsFor = React.useCallback(
     (m: IsoDate) =>
       commercialMetrics({
@@ -154,8 +164,9 @@ export function CommercialMetricsPage() {
         marketingEntries: entries,
         crmLeads: leads,
         matches,
+        crmFunnel,
       }),
-    [meetings, sales, entries, leads, matches],
+    [meetings, sales, entries, leads, matches, crmFunnel],
   )
 
   const series = React.useMemo(
@@ -334,10 +345,11 @@ export function CommercialMetricsPage() {
             />
             <TrendCard
               title="Custos por mês"
-              description="Investimento em anúncios ÷ leads e ÷ reuniões. O CAC está no cartão acima — na mesma escala ele achataria o CPL."
+              description="Investimento em anúncios ÷ leads, ÷ leads qualificados (MQL) e ÷ reuniões. O CAC está no cartão acima — na mesma escala ele achataria o CPL."
               data={series}
               lines={[
                 { key: 'cplCents', label: 'CPL', color: TERTIARY },
+                { key: 'costPerMqlCents', label: 'Custo por MQL', color: ACCENT },
                 {
                   key: 'costPerMeetingCents',
                   label: 'Custo por reunião',
@@ -554,6 +566,28 @@ function MetricTiles({
         secondary={current.adsCents ? `${formatMoney(current.adsCents)} em anúncios` : undefined}
       />
       <KpiCard
+        label="Leads qualificados (MQL)"
+        value={current.mqls == null ? '—' : formatNumber(current.mqls)}
+        variation={variation(current.mqls, previous?.mqls)}
+        secondary={
+          current.mqls != null && current.crmRealLeads
+            ? `${pct(current.qualificationRate)} dos ${formatNumber(current.crmRealLeads)} leads reais do CRM`
+            : undefined
+        }
+        hint={
+          current.mqls == null
+            ? 'CRM indisponível: a conexão com o Enjoy CRM não respondeu.'
+            : 'Leads marcados como qualificados no Enjoy CRM, contados pelo mês em que o lead entrou. Teste e spam não entram.'
+        }
+      />
+      <KpiCard
+        label="Custo por MQL"
+        value={money(current.costPerMqlCents)}
+        variation={variation(current.costPerMqlCents, previous?.costPerMqlCents)}
+        invertVariation
+        hint="Investimento em anúncios do mês (Marketing) ÷ leads qualificados no CRM."
+      />
+      <KpiCard
         label="Reuniões"
         value={formatNumber(current.meetings)}
         variation={variation(current.meetings, previous?.meetings)}
@@ -635,6 +669,8 @@ function MetricTiles({
 function Funnel({ metrics }: { metrics: CommercialMetrics }) {
   const steps = [
     { label: 'Leads', value: metrics.leads },
+    // MQL só entra quando o CRM respondeu: etapa "0" falsa quebraria a passagem.
+    ...(metrics.mqls != null ? [{ label: 'Qualificados (MQL)', value: metrics.mqls }] : []),
     { label: 'Reuniões', value: metrics.meetings },
     { label: 'Realizadas', value: metrics.meetingsHeld },
     { label: 'Vendas', value: metrics.meetingSales },

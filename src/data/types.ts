@@ -693,6 +693,21 @@ export type MarketingChannel =
   | 'outro'
 
 /**
+ * Um dia do funil de leads do CRM (`enjoy-crm`), lido pela função
+ * `crm.finance_lead_funnel`. Só contagens: nenhum dado pessoal atravessa.
+ * Recorte por safra: o dia em que o lead ENTROU, no fuso de Brasília.
+ */
+export interface CrmLeadDay {
+  day: IsoDate
+  /** Oportunidades abertas no dia (inclui teste/spam). */
+  leads: number
+  /** Leads reais: sem marcação de teste, spam ou inválido. */
+  realLeads: number
+  /** Leads reais marcados como qualificados no CRM (MQL). */
+  qualified: number
+}
+
+/**
  * Investimento de marketing de um mês, num canal.
  *
  * Existe porque verba de anúncio é um fato MENSAL, e o sistema só tinha dois
